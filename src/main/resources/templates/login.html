@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - Cổng thông tin đào tạo Van Lang University</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-image: url('/images/vanlang.jpg'); /* Đường dẫn file ảnh nền của bạn */
+            background-size: cover;
+            background-position: center;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .login-card {
+            background-color: rgba(255, 255, 255, 0.95);
+            width: 100%;
+            max-width: 400px;
+            padding: 2.5rem;
+            border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .btn-vlu {
+            background-color: #002060; /* Màu xanh đậm nút đăng nhập */
+            transition: background 0.3s;
+        }
+        .btn-vlu:hover {
+            background-color: #001540;
+        }
+        .input-field {
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            padding: 10px 12px;
+            width: 100%;
+            margin-bottom: 1rem;
+            outline: none;
+        }
+        .input-field:focus {
+            border-color: #cc0000;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+    <div class="mb-6">
+        <h1 class="text-red-600 text-3xl font-bold italic mb-1">Van Lang</h1>
+        <h2 class="text-red-600 text-xl italic mb-4">University</h2>
+
+        <img th:src="@{/images/logo.png}" alt="VLU Logo" class="mx-auto w-24 mb-4">
+
+        <h3 class="text-blue-900 font-bold text-lg mb-6">Cổng thông tin đào tạo</h3>
+    </div>
+
+    <form th:action="@{/login}" method="post">
+        <div class="text-left">
+            <input type="text"
+                   name="username"
+                   class="input-field"
+                   placeholder="Mã số sinh viên"
+                   required>
+
+            <input type="password"
+                   name="password"
+                   class="input-field"
+                   placeholder="Ngày tháng năm sinh (12022004)"
+                   required>
+        </div>
+
+        <button type="submit"
+                class="btn-vlu text-white w-full py-2 font-semibold rounded mt-2">
+            Đăng nhập
+        </button>
+    </form>
+
+    <div th:if="${param.error}" class="text-red-500 text-sm mt-4">
+        Sai tài khoản hoặc mật khẩu!
+    </div>
+</div>
+
+</body>
+</html>

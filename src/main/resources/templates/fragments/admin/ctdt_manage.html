@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="ctdtSection">
+    <!-- Quản lý chương trình đào tạo -->
+    <div class="ctdt-management">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="text-secondary mb-0">
+                <i class="fas fa-book me-2"></i>Quản lý kế hoạch đào tạo
+            </h5>
+            <div class="d-flex gap-2">
+                <!-- Nút import Excel -->
+                <button class="btn btn-success btn-sm px-3" onclick="openImportModal()">
+                    <i class="fas fa-file-import me-1"></i> Import Excel
+                </button>
+                <!-- Nút thêm CTĐT -->
+                <button class="btn btn-vlu-blue btn-sm px-3" onclick="openCTDTModal()">
+                    <i class="fas fa-plus me-1"></i> Thêm CTĐT
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs quản lý theo ngành -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-2">
+                <ul class="nav nav-tabs card-header-tabs" id="ctdtTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="all-tab" data-bs-toggle="tab"
+                                data-bs-target="#all" type="button" role="tab"
+                                onclick="switchCTDTTab('all')">
+                            <i class="fas fa-layer-group me-1"></i>Tất cả
+                        </button>
+                    </li>
+                    <!-- Các tab ngành sẽ được thêm vào đây bằng JavaScript -->
+                </ul>
+            </div>
+            <div class="card-body p-3">
+                <div class="tab-content" id="ctdtTabContent">
+                    <!-- Tab Tất cả -->
+                    <div class="tab-pane fade show active" id="all" role="tabpanel">
+                        <!-- Nội dung tab tất cả -->
+                        <div class="ctdt-content" data-nganh="all">
+                            <!-- Bộ lọc tìm kiếm -->
+                            <div class="row g-3 align-items-center mb-3">
+                                <div class="col-md-3">
+                                    <select id="filterHocKy" class="form-select form-select-sm">
+                                        <option value="">- Tìm theo học kỳ -</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select id="filterNganh" class="form-select form-select-sm">
+                                        <option value="">- Tìm theo ngành -</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select id="filterChuyenNganh" class="form-select form-select-sm">
+                                        <option value="">- Tìm theo chuyên ngành -</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <select id="filterLoai" class="form-select form-select-sm">
+                                        <option value="">- Loại học phần -</option>
+                                        <option value="BB">Bắt buộc (BB)</option>
+                                        <option value="TC">Tự chọn (TC)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-1 text-center">
+                                    <button class="btn btn-light btn-sm border w-100" onclick="searchCTDT()" title="Tìm kiếm">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-outline-secondary btn-sm w-100" onclick="resetCTDTSearch()"
+                                            style="font-size: 12px;">
+                                        Reset tìm kiếm
+                                    </button>
+                                </div>
+                                <div class="col-md-1 text-end">
+                                    <span class="small text-muted">
+                                        Hiển thị: <span id="ctdtCount">0</span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Bảng hiển thị CTĐT -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered text-center align-middle shadow-sm" style="font-size: 13px;">
+                                    <thead class="admin-table-header">
+                                    <tr>
+                                        <th width="50">HK</th>
+                                        <th width="100">Mã HP</th>
+                                        <th width="50">TT</th>
+                                        <th>Tên học phần</th>
+                                        <th width="80">Tín chỉ</th>
+                                        <th width="70">BB/TC</th>
+                                        <th width="90">Nhóm TC</th>
+                                        <th>Học phần tiên quyết</th>
+                                        <th>Ngành</th>
+                                        <th>Chuyên ngành</th>
+                                        <th width="120">Tác vụ</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="ctdtTableBody">
+                                    <tr>
+                                        <td colspan="11" class="text-center py-5">
+                                            <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                                            Đang tải dữ liệu...
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Các tab ngành sẽ được thêm vào đây động -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal tạo kế hoạch đào tạo mới - Đặt bên ngoài fragment để tránh lỗi -->
+</body>
+</html>

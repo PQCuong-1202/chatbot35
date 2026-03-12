@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="notifySection">
+    <!-- Thông báo thông minh -->
+    <div class="notifications-management">
+        <h5 class="text-secondary mb-4">
+            <i class="fas fa-bell me-2"></i>Thông báo học tập
+        </h5>
+
+        <!-- Header với số lượng thông báo chưa đọc -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">Thông báo thông minh</h6>
+                        <p class="text-muted small mb-0">
+                            Hệ thống tự động thông báo theo thời gian thực về tiến độ học tập của bạn
+                        </p>
+                    </div>
+                    <div>
+                        <span class="badge bg-danger rounded-pill px-3 py-2" id="unreadCountBadge">0</span>
+                        <button class="btn btn-vlu-blue btn-sm ms-2" onclick="markAllNotificationsAsRead()">
+                            <i class="fas fa-check-double me-1"></i> Đánh dấu tất cả
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bộ lọc thông báo -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <select id="notificationFilterType" class="form-select form-select-sm" onchange="filterNotifications()">
+                    <option value="">Tất cả loại</option>
+                    <option value="SUCCESS">Thành công</option>
+                    <option value="INFO">Thông tin</option>
+                    <option value="WARNING">Cảnh báo</option>
+                    <option value="DANGER">Quan trọng</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="notificationFilterRead" class="form-select form-select-sm" onchange="filterNotifications()">
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="false">Chưa đọc</option>
+                    <option value="true">Đã đọc</option>
+                </select>
+            </div>
+            <div class="col-md-6 text-end">
+                <button class="btn btn-outline-primary btn-sm" onclick="triggerNotificationCheck()">
+                    <i class="fas fa-sync-alt me-1"></i> Kiểm tra thông báo mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Danh sách thông báo -->
+        <div id="notificationsList"></div>
+
+        <!-- Empty state -->
+        <div id="emptyNotifications" style="display: none;">
+            <div class="text-center py-5">
+                <i class="fas fa-bell-slash fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Không có thông báo nào</h5>
+                <p class="text-muted">Hệ thống sẽ thông báo khi có thông tin mới về học tập của bạn</p>
+                <button class="btn btn-vlu-blue btn-sm mt-2" onclick="triggerNotificationCheck()">
+                    <i class="fas fa-sync-alt me-1"></i> Kiểm tra ngay
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal xem chi tiết thông báo -->
+    <div class="modal fade" id="notificationDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header py-2" id="notificationModalHeader">
+                    <h6 class="modal-title">Chi tiết thông báo</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <h5 id="notificationDetailTitle" class="mb-3"></h5>
+                    <div class="mb-3">
+                        <small class="text-muted" id="notificationDetailTime"></small>
+                    </div>
+                    <div id="notificationDetailMessage" class="mb-4" style="white-space: pre-line;"></div>
+                    <div class="text-end">
+                        <a href="#" class="btn btn-vlu-blue btn-sm" id="notificationActionBtn" style="display: none;" target="_blank">
+                            <i class="fas fa-external-link-alt me-1"></i> Xem chi tiết
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

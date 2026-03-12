@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div th:fragment="chatbotSection">
+    <div class="chatbot-wrapper">
+
+        <!-- ===== SIDEBAR ===== -->
+        <aside class="chat-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">
+                    <div class="brand-icon">🤖</div>
+                    <div>
+                        <div class="brand-name">EduBot AI</div>
+                        <div class="brand-subtitle">Hỗ trợ học tập</div>
+                    </div>
+                </div>
+                <button class="new-chat-btn" onclick="startNewChat()">
+                    <i class="fas fa-plus"></i> Cuộc hội thoại mới
+                </button>
+            </div>
+
+            <!-- Stats -->
+            <div class="sidebar-stats">
+                <div class="stat-pill">
+                    <span class="stat-pill-num" id="chatCount">0</span>
+                    <span class="stat-pill-label">Tin nhắn</span>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- ===== MAIN CHAT ===== -->
+        <main class="chat-main">
+            <!-- Topbar -->
+            <div class="chat-topbar">
+                <div class="chat-topbar-left">
+                    <div class="model-badge">
+                        <span class="dot"></span>
+                        N8N AI · Đang hoạt động
+                    </div>
+                </div>
+                <div class="chat-actions">
+                    <button class="chat-action-btn danger" onclick="clearChatHistory()">
+                        <i class="fas fa-trash"></i> Xóa lịch sử
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="chat-messages-area" id="chatMessages">
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-avatar">🤖</div>
+                    <div class="welcome-title">Xin chào! Tôi là EduBot</div>
+                    <p class="welcome-sub">
+                        Tôi có thể giúp bạn tra cứu thông tin chương trình đào tạo Hãy bắt đầu bằng cách đặt câu hỏi!
+                    </p>
+                    <div class="suggestion-chips">
+                        <div class="suggestion-chip" onclick="suggestQuestion('Có những môn học nào trong học kỳ 1?')">
+                            📚 Môn học học kỳ 1
+                        </div>
+                        <div class="suggestion-chip" onclick="suggestQuestion('Tổng số tín chỉ toàn khóa là bao nhiêu?')">
+                            🎯 Tổng số tín chỉ
+                        </div>
+                        <div class="suggestion-chip" onclick="suggestQuestion('Có những môn tự chọn nào?')">
+                            🔀 Môn tự chọn
+                        </div>
+                        <div class="suggestion-chip" onclick="suggestQuestion('Liệt kê các môn học bắt buộc')">
+                            ✅ Môn bắt buộc
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input -->
+            <div class="chat-input-area">
+                <div class="input-wrapper">
+                    <textarea
+                            class="chat-textarea"
+                            id="chatInput"
+                            placeholder="Hỏi về chương trình đào tạo của bạn..."
+                            rows="1"
+                            onkeydown="handleChatKeydown(event)"
+                            oninput="autoResizeTextarea(this)"
+                    ></textarea>
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="input-hint">
+                    Nhấn <kbd style="color:#000;background:#f3f4f6;border:1px solid #e5e7eb;padding:1px 5px;border-radius:4px;font-size:10px;">Enter</kbd> để gửi &nbsp;·&nbsp; <kbd style="color:#000;background:#f3f4f6;border:1px solid #e5e7eb;padding:1px 5px;border-radius:4px;font-size:10px;">Shift+Enter</kbd> để xuống dòng
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+</body>
+</html>

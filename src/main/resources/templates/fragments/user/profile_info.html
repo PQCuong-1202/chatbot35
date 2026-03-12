@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="profileSection">
+    <!-- Thông tin cá nhân -->
+    <div class="user-profile">
+        <h5 class="text-secondary mb-4">
+            <i class="fas fa-user-circle me-2"></i>Thông tin cá nhân
+        </h5>
+
+        <div id="profileContent">
+            <div class="text-center py-4">
+                <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                Đang tải thông tin...
+            </div>
+        </div>
+
+        <div id="editProfileContent" style="display: none;">
+            <div class="card mb-4">
+                <div class="card-header bg-light py-2">
+                    <h6 class="mb-0"><i class="fas fa-user-edit me-2"></i>Chỉnh sửa thông tin cá nhân</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-3 text-center">
+                            <!-- Avatar display -->
+                            <div class="mb-3">
+                                <div id="avatarPreview" class="avatar-preview mx-auto mb-2"
+                                     style="width: 150px; height: 150px; border-radius: 50%; overflow: hidden; background: #f8f9fa; border: 2px solid #dee2e6; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-user fa-4x text-muted" id="defaultAvatarIcon"></i>
+                                    <img id="avatarImage" src="" alt="Avatar"
+                                         style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary mb-2" onclick="document.getElementById('avatarUpload').click()">
+                                    <i class="fas fa-camera me-1"></i> Chọn ảnh
+                                </button>
+                                <input type="file" id="avatarUpload" accept="image/*" style="display: none;" onchange="previewAvatar(this)">
+                                <div class="small text-muted mt-1">JPG, PNG, max 2MB</div>
+                                <button type="button" class="btn btn-sm btn-outline-danger mt-2" id="removeAvatarBtn" style="display: none;" onclick="removeAvatar()">
+                                    <i class="fas fa-trash me-1"></i> Xóa ảnh
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="col-md-9">
+                            <form id="profileForm">
+                                <input type="hidden" id="userId">
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">MSSV</label>
+                                        <input type="text" id="editMssv" class="form-control form-control-sm" readonly>
+                                        <div class="form-text">Mã số sinh viên không thể thay đổi</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Họ và tên *</label>
+                                        <input type="text" id="editFullName" class="form-control form-control-sm" required>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Ngày sinh *</label>
+                                        <input type="text" id="editBirth" class="form-control form-control-sm date-input"
+                                               placeholder="dd/mm/yyyy" required>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Giới tính</label>
+                                        <select id="editSex" class="form-select form-select-sm">
+                                            <option value="">-- Chọn giới tính --</option>
+                                            <option value="Nam">Nam</option>
+                                            <option value="Nữ">Nữ</option>
+                                            <option value="Khác">Khác</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Ngành</label>
+                                        <select id="editDepartment" class="form-select form-select-sm">
+                                            <option value="">-- Chọn ngành --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Chuyên ngành</label>
+                                        <select id="editMajor" class="form-select form-select-sm">
+                                            <option value="">-- Chọn chuyên ngành --</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Khóa</label>
+                                        <input type="text" id="editCourse" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Lớp</label>
+                                        <input type="text" id="editStudentClass" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Email cá nhân</label>
+                                        <input type="email" id="editGmail" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Email VLU</label>
+                                        <input type="email" id="editGmailVlu" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Số điện thoại</label>
+                                        <input type="tel" id="editPhone" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label small">Quốc tịch</label>
+                                        <input type="text" id="editNation" class="form-control form-control-sm" value="Việt Nam">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-12 mb-3">
+                                        <label class="form-label small">Địa chỉ</label>
+                                        <textarea id="editAddress" class="form-control form-control-sm" rows="2"></textarea>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex justify-content-end gap-2 mt-3">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cancelEditProfile()">
+                                        <i class="fas fa-times me-1"></i> Hủy
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-vlu-blue" onclick="saveProfile()">
+                                        <i class="fas fa-save me-1"></i> Lưu thay đổi
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
