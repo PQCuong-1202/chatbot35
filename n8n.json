@@ -1,0 +1,3333 @@
+{
+  "name": "test",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst learnNextHK = Array.isArray(data.learn_next) && data.learn_next.length > 0\n  ? data.learn_next[0]\n  : null;\n\nconst learnedHK = Array.isArray(data.learned) && data.learned.length > 0\n  ? data.learned.join(\", \")\n  : null;\n\nconst learnNextSubjects = Array.isArray(data.learn_next_subjects)\n  ? data.learn_next_subjects.filter(r => r[\"Tên học phần\"])\n  : [];\n\nconst failedSubjects = Array.isArray(data.failedSubjects)\n  ? data.failedSubjects\n  : [];\n\nconst affectedSubjects = Array.isArray(data.affectedSubjects)\n  ? data.affectedSubjects\n  : [];\n\nconst failValue = data.fail?.value === true;\n\nconst rawQuestion = data.rawQuestion || null;\n\n// =========================\n// CASE 0: KHÔNG CÓ MÔN NÀO\n// =========================\nif (!learnNextHK || learnNextSubjects.length === 0) {\n  return [{\n    json: {\n      model: $env.AI_MODEL,\n      temperature: 0,\n      messages: [\n        {\n          role: \"system\",\n          content: `\nBạn là trợ lý tư vấn học tập.\nChỉ sử dụng dữ liệu được cung cấp.\nKhông suy luận.\n          `.trim()\n        },\n        {\n          role: \"assistant\",\n          content: \"Không tìm được môn học phù hợp để tư vấn cho sinh viên.\"\n        }\n      ]\n    }\n  }];\n}\n\n// =========================\n// BUILD: MÔN ĐÃ HỌC\n// =========================\nconst learnedText = learnedHK\n  ? `Sinh viên đã hoàn thành học kỳ: ${learnedHK}.`\n  : \"Không có thông tin học kỳ đã học.\";\n\n// =========================\n// BUILD: MÔN SẼ HỌC\n// =========================\nlet learnNextList = \"\";\n\nlearnNextSubjects.forEach(r => {\n  let line = `- ${r[\"Tên học phần\"]} (${r[\"Số tín chỉ\"]} tín chỉ)`;\n\n  if (r[\"Bắt buộc/Tự chọn\"] === \"BB\") {\n    line += \" – Bắt buộc\";\n  } else {\n    line += ` – Tự chọn – Nhóm: ${r.group || \"Không rõ nhóm\"}`;\n  }\n\n  learnNextList += line + \"\\n\";\n});\n\n// =========================\n// CASE 1: FAIL MODE\n// =========================\nif (failValue) {\n  let failedList = \"\";\n  let affectedList = \"\";\n\n  failedSubjects.forEach(r => {\n    failedList += `- ${r[\"Tên học phần\"]} (${r[\"Số tín chỉ\"]} tín chỉ)\\n`;\n  });\n\n  affectedSubjects.forEach(r => {\n    if (r[\"Bắt buộc/Tự chọn\"] === \"BB\") {\n      affectedList += `- ${r[\"Tên học phần\"]} (HK ${r[\"Phân bổ học kỳ\"]}) – môn bắt buộc, nên học lại sớm nhất có thể\\n`;\n    } else {\n      affectedList += `- ${r[\"Tên học phần\"]} (HK ${r[\"Phân bổ học kỳ\"]}) – môn tự chọn, cân nhắc học lại hoặc chọn môn khác\\n`;\n    }\n  });\n\n  return [{\n    json: {\n      model: $env.AI_MODEL,\n      temperature: 0.3,\n      messages: [\n        {\n          role: \"system\",\n          content: `\nBạn là hệ thống diễn giải dữ liệu học tập.\n\nVAI TRÒ:\n- Chuyển dữ liệu học vụ do hệ thống cung cấp thành đoạn văn dễ đọc, tự nhiên\n- Có thể đưa ra gợi ý học tập dựa vào thông tin đã cho chứ không được chế thêm thông tin\n\nQUY TẮC TUYỆT ĐỐI:\n- Mỗi thông tin trong câu trả lời PHẢI xuất phát trực tiếp từ dữ liệu.\n- Không thêm ví dụ, không thêm số liệu, không thêm giả định.\n- Không tạo kế hoạch mẫu, không phân bổ thời gian.\n- Không nhắc đến nội dung không tồn tại trong dữ liệu.\n\nCÁCH VIẾT:\n- Viết như đang đọc lại thông tin cho sinh viên nghe.\n- Có thể nối câu cho mượt, nhưng KHÔNG được thêm ý mới.\n\nCÁCH TRÌNH BÀY MÔN HỌC:\n- Mỗi môn phải bao gồm: tên môn + số tín chỉ + bắt buộc/tự chọn\n- Ví dụ: \"Anh Văn 6 (3 tín chỉ, bắt buộc)\"\n- Gộp các môn tự chọn theo nhóm khi trình bày\n- Dựa vào tên nhóm để xác định số môn được phép chọn trong nhóm đó\n- Nhắc sinh viên mỗi nhóm chỉ được chọn đúng số môn quy định, nếu đăng ký vượt quá số đó thì các môn dư sẽ không được tính vào chương trình\n\nNếu một thông tin không có trong dữ liệu → không được xuất hiện trong câu trả lời.\n\n[DỮ LIỆU GIỮ NGUYÊN PHẦN CÒN LẠI]\n\n${learnedText}\n\nI. Sinh viên hiện tại sẽ học đến ${learnNextHK}.\n\nII. Các môn sinh viên sẽ được học trong học kỳ ${learnNextHK}:\n${learnNextList}\n\nIII. Các môn đã rớt:\n${failedList || \"- Không có\"}\n\nIV. Các môn chưa đủ điều kiện đăng ký do ảnh hưởng từ môn đã rớt:\n${affectedList || \"- Không có\"}\n          `.trim()\n        },\n        {\n          role: \"user\",\n          content: rawQuestion\n        }\n      ]\n    }\n  }];\n}\n\n// =========================\n// CASE 2: NORMAL MODE\n// =========================\nreturn [{\n  json: {\n    model: $env.AI_MODEL,\n    temperature: 0.3,\n    messages: [\n      {\n        role: \"system\",\n        content: `\nBạn là hệ thống diễn giải dữ liệu học tập.\n\nVAI TRÒ:\n- Chuyển dữ liệu học vụ do hệ thống cung cấp thành đoạn văn dễ đọc, tự nhiên.\n- Không tư vấn, không đưa lời khuyên, không đề xuất hành động.\n\nQUY TẮC TUYỆT ĐỐI:\n- Mỗi thông tin trong câu trả lời PHẢI xuất phát trực tiếp từ dữ liệu.\n- Không thêm ví dụ, không thêm số liệu, không thêm giả định.\n- Không tạo kế hoạch mẫu, không phân bổ thời gian.\n- Không nhắc đến nội dung không tồn tại trong dữ liệu.\n\nCÁCH VIẾT:\n- Viết như đang đọc lại thông tin cho sinh viên nghe.\n- Có thể nối câu cho mượt, nhưng KHÔNG được thêm ý mới.\n\nCÁCH TRÌNH BÀY MÔN HỌC:\n- Mỗi môn phải bao gồm: tên môn + số tín chỉ + bắt buộc/tự chọn\n- Ví dụ: \"Anh Văn 6 (3 tín chỉ, bắt buộc)\"\n- Gộp các môn tự chọn theo nhóm khi trình bày\n- Dựa vào tên nhóm để xác định số môn được phép chọn trong nhóm đó\n- Nhắc sinh viên mỗi nhóm chỉ được chọn đúng số môn quy định, nếu đăng ký vượt quá số đó thì các môn dư sẽ không được tính vào chương trình\n\nNếu một thông tin không có trong dữ liệu → không được xuất hiện trong câu trả lời.\n\n[DỮ LIỆU GIỮ NGUYÊN PHẦN CÒN LẠI]\n\n${learnedText}\n\nI. Sinh viên hiện tại sẽ học đến ${learnNextHK}.\n\nII. Các môn trong học kỳ ${learnNextHK}:\n${learnNextList}\n        `.trim()\n      },\n      {\n        role: \"user\",\n        content: rawQuestion\n      }\n    ]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -1696
+      ],
+      "id": "0fe36ee4-6aca-4f53-a901-5fb9d3dbae85",
+      "name": "aiHelp"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "006918d9-e2e5-42f3-81f3-2167010722b1",
+              "leftValue": "={{ $json.typeTT }}",
+              "rightValue": "=CTDT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5232,
+        -1440
+      ],
+      "id": "96fed0bb-ecb6-4c51-b16a-bb96f50d7830",
+      "name": "If10"
+    },
+    {
+      "parameters": {
+        "jsCode": "return[{\n  \n}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4528,
+        -1520
+      ],
+      "id": "36f09901-a7b7-43fa-80b0-51c8b3967c3a",
+      "name": "empty3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n/* ======================================================\n * UTILITY FUNCTIONS\n * ====================================================== */\n\nfunction normalizeText(str = '') {\n  return String(str)\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9\\s]/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction parseHK(val) {\n  if (!val) return null;\n  const m = /hk\\s*(\\d+)/i.exec(String(val));\n  return m ? Number(m[1]) : null;\n}\n\nfunction isValidSubjectRow(r) {\n  if (!r) return false;\n  const name = String(r['Tên học phần'] || '').trim();\n  const code = String(r['Mã học phần'] || '').trim();\n  const tc = Number(r['Số tín chỉ']);\n  if (!name || !code || !tc || isNaN(tc)) return false;\n  if (/\\s/.test(code)) return false;\n  return true;\n}\n\n/* ======================================================\n * EXTRACT DATA FROM FilterHelp OUTPUT\n * ====================================================== */\n\nlet inputData = null;\n\nfor (const item of items) {\n  if (item.json?.learn_next_subjects && item.json?.failedSubjects && item.json?.affectedSubjects) {\n    inputData = item.json;\n    break;\n  }\n}\n\nif (!inputData) {\n  return [{\n    json: {\n      total: 0,\n      learn_next_subjects: []\n    }\n  }];\n}\n\n/* ======================================================\n * GET SUBJECT NAMES FROM FILTER 1 OUTPUT\n * ====================================================== */\n\nconst filter1Subjects = [\n  ...(inputData.learn_next_subjects || []),\n  ...(inputData.failedSubjects || []),\n  ...(inputData.affectedSubjects || [])\n];\n\n// CREATE SET OF VALID SUBJECT NAMES (normalized)\nconst validSubjectNames = new Set();\n\nfilter1Subjects.forEach(s => {\n  const name = normalizeText(s['_tenHocPhan_norm'] || s['Tên học phần'] || '');\n  if (name) validSubjectNames.add(name);\n});\n\n/* ======================================================\n * GET NEW DATA FROM CACHE\n * ====================================================== */\n\nlet newCacheData = [];\n\nfor (const item of items) {\n  if (typeof item.json?.data === 'string' && item.json?.cache_key === 'sheet_cache') {\n    try {\n      const parsed = JSON.parse(item.json.data);\n      if (Array.isArray(parsed)) {\n        newCacheData = parsed;\n        break;\n      }\n    } catch {}\n  }\n}\n\n/* ======================================================\n * FILTER NEW DATA BY EXACT SUBJECT NAME MATCH\n * ====================================================== */\n\nconst filteredNewData = newCacheData.filter(row => {\n  const tenHP = normalizeText(row['_tenHocPhan_norm'] || row['Tên HP'] || '');\n  return validSubjectNames.has(tenHP);\n});\n\n/* ======================================================\n * GROUP AND FORMAT next_subject DATA\n * ====================================================== */\n\n// Extract class code from Mã LHP (e.g., \"252_71ITSE30803_01\" -> \"01\")\nfunction extractClassCode(maLHP) {\n  if (!maLHP) return '';\n  const parts = String(maLHP).split('_');\n  return parts[parts.length - 1] || '';\n}\n\n// Group by subject (Mã MH)\nconst subjectGroups = new Map();\n\nfilteredNewData.forEach(row => {\n  const maMH = row['Mã MH'];\n  if (!subjectGroups.has(maMH)) {\n    subjectGroups.set(maMH, []);\n  }\n  subjectGroups.get(maMH).push(row);\n});\n\n// Format each subject group\nconst formattedNextSubject = [];\n\nsubjectGroups.forEach((rows, maMH) => {\n  // Separate theory and practice classes\n  const theoryClasses = rows.filter(r => normalizeText(r['Loại HP']) === 'ly thuyet');\n  const practiceClasses = rows.filter(r => normalizeText(r['Loại HP']) === 'thuc hanh');\n  \n  // Process each theory class\n  theoryClasses.forEach(theory => {\n    const theoryCode = extractClassCode(theory['Mã LHP']);\n    \n    const subjectData = {\n      'Tên HP': theory['Tên HP'],\n      'Mã LHP': theoryCode,\n      'Loại HP': theory['Loại HP'],\n      'Thứ': theory['Thứ'],\n      'Tiết Học': theory['Tiết Học'],\n      'Phòng': theory['Phòng'],\n      'practice': []\n    };\n    \n    // Find matching practice classes (first 2 digits match theory code)\n    practiceClasses.forEach(practice => {\n      const practiceCode = extractClassCode(practice['Mã LHP']);\n      \n      // Check if practice belongs to this theory (e.g., 0101 belongs to 01)\n      if (practiceCode.startsWith(theoryCode)) {\n        subjectData.practice.push({\n          'Loại HP': practice['Loại HP'],\n          'Mã LHP': practiceCode,\n          'Thứ': practice['Thứ'],\n          'Tiết Học': practice['Tiết Học'],\n          'Phòng': practice['Phòng']\n        });\n      }\n    });\n    \n    formattedNextSubject.push(subjectData);\n  });\n  \n  // Handle standalone practice classes (no matching theory)\n  practiceClasses.forEach(practice => {\n    const practiceCode = extractClassCode(practice['Mã LHP']);\n    const hasTheory = theoryClasses.some(t => practiceCode.startsWith(extractClassCode(t['Mã LHP'])));\n    \n    if (!hasTheory) {\n      formattedNextSubject.push({\n        'Tên HP': practice['Tên HP'],\n        'Mã LHP': practiceCode,\n        'Loại HP': practice['Loại HP'],\n        'Thứ': practice['Thứ'],\n        'Tiết Học': practice['Tiết Học'],\n        'Phòng': practice['Phòng'],\n        'practice': []\n      });\n    }\n  });\n});\n\n/* ======================================================\n * REMOVE DUPLICATES FROM FILTER 1 DATA\n * ====================================================== */\n\nconst uniqueMap = new Map();\nconst priority = { 'fail': 5, 'fail2': 4, 'fail1': 3, 'learn_next': 2, 'next': 1 };\n\nfilter1Subjects.forEach(subject => {\n  if (!isValidSubjectRow(subject)) return;\n  \n  const code = subject['Mã học phần'];\n  const existing = uniqueMap.get(code);\n  \n  if (!existing) {\n    uniqueMap.set(code, subject);\n  } else {\n    const existingStatus = existing.fail || existing.type || existing.learn_status;\n    const currentStatus = subject.fail || subject.type || subject.learn_status;\n    \n    const existingPriority = priority[existingStatus] || 0;\n    const currentPriority = priority[currentStatus] || 0;\n    \n    if (currentPriority > existingPriority) {\n      uniqueMap.set(code, subject);\n    }\n  }\n});\n\nconst cleanedFilter1Data = Array.from(uniqueMap.values());\n\n/* ======================================================\n * OUTPUT - 2 SEPARATE JSON OBJECTS\n * ====================================================== */\n\nreturn [\n  // JSON 1: CTDT Data\n  {\n    json: {\n      typeTT: 'CTDT',\n      rawQuestion: inputData.rawQuestion,\n      intent: inputData.intent,\n      course: inputData.course,\n      industry: inputData.industry,\n      semester: inputData.semester,\n      learned: inputData.learned,\n      learn_next: inputData.learn_next,\n      currentHK: inputData.currentHK,\n      fail: inputData.fail,\n      total: cleanedFilter1Data.length,\n      learn_next_subjects: cleanedFilter1Data\n    }\n  },\n  // JSON 2: Class Schedule Data\n  {\n    json: {\n      typeTT: 'MH',\n      total_next_subject: formattedNextSubject.length,\n      next_subject: formattedNextSubject\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        -1440
+      ],
+      "id": "7a07dffd-bf07-4755-aad6-f65fd93a90b7",
+      "name": "Help"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4848,
+        -1440
+      ],
+      "id": "d5516b6d-17b8-40a3-b576-ea969a395b2b",
+      "name": "Merge8"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "sheet_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4688,
+        -1520
+      ],
+      "id": "80e2c88d-3257-4985-ab75-0df775b6b31b",
+      "name": "Get row(s) MH4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4192,
+        -1424
+      ],
+      "id": "1dd7d981-beaa-4bba-ab4d-65c8d7f24c8d",
+      "name": "ctdt1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3984,
+        -1424
+      ],
+      "id": "18a76a18-373e-465b-9cc1-482316627691",
+      "name": "Merge6"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        3792,
+        -1520
+      ],
+      "id": "a4176f5e-9c95-4aa7-894b-e8b8b3484f03",
+      "name": "Get row(s) CTDT3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3616,
+        -1520
+      ],
+      "id": "a64ef275-144d-4879-83fa-ca5a5907b5d5",
+      "name": "none5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        -672
+      ],
+      "id": "46f8bb3d-88f6-44ab-91f0-35c5df551ecf",
+      "name": "inputAILH"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        -576
+      ],
+      "id": "44a468c1-0d5c-46ed-b2c6-cd69fe3b1ff7",
+      "name": "none4"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4320,
+        -672
+      ],
+      "id": "b87b51cc-765b-4386-924c-dcd8529c39a7",
+      "name": "Merge5"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "sheet_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4144,
+        -576
+      ],
+      "id": "baecc481-f556-4f8f-8746-ff8b0045e448",
+      "name": "Get row(s) MH1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1a6b158-51da-4cbe-a3ec-ae17def60a37",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3616,
+        -768
+      ],
+      "id": "49549457-7471-43e2-a87e-912d56d5982d",
+      "name": "If7"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        -912
+      ],
+      "id": "744f6b0a-7286-4f4b-a53e-2bd43aac4732",
+      "name": "inputAICTDT1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4320,
+        -832
+      ],
+      "id": "13e980ae-2d8a-4978-ae1b-264d93bf8808",
+      "name": "Merge4"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4128,
+        -944
+      ],
+      "id": "22f3269d-a6fd-433c-bd2b-6877c46ae1cc",
+      "name": "Get row(s) CTDT2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -944
+      ],
+      "id": "9412ee60-e2f3-43ba-90e0-4ebf6ad17c7c",
+      "name": "none3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst major = $('configAI').first().json.major;\n\n// --------------------\n// UTIL\n// --------------------\nfunction normalizeText(str = '') {\n  return str\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9\\s]/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction isValidSubject(item) {\n  const name = String(item[\"Tên học phần\"] || \"\").trim();\n  const code = String(item[\"Mã học phần\"] || \"\").trim();\n  const credit = String(item[\"Số tín chỉ\"] || \"\").trim();\n\n  if (!name) return false;\n\n  // loại dòng group\n  if (!code) return false;\n\n  // phải có tín chỉ\n  if (!credit) return false;\n\n  return true;\n}\n\nfunction isNearExactMatch(keywordNorm, subjectNorm) {\n  const kwTokens = keywordNorm.split(' ');\n  const nameTokens = subjectNorm.split(' ');\n  return kwTokens.every(t => nameTokens.includes(t));\n}\n\nfunction getMatchLevel(keywordNorm, nameNorm, nameBase) {\n\n  // LEVEL 1\n  if (nameNorm === keywordNorm) return 1;\n\n  // LEVEL 2\n  if (isNearExactMatch(keywordNorm, nameNorm)) return 2;\n\n  // LEVEL 3\n  const kwTokens = keywordNorm.split(\" \");\n  const nameTokens = nameBase.split(\" \");\n  \n  let count = 0;\n  \n  for (const t of kwTokens) {\n    if (nameTokens.includes(t)) count++;\n  }\n  \n  const ratio = count / kwTokens.length;\n  \n  // match mạnh\n  if (ratio >= 0.7) return 3;\n  \n  // fallback: keyword dài ≥ 4 ký tự\n  if (kwTokens.length === 1 && keywordNorm.length >= 4) {\n    if (nameBase.includes(keywordNorm)) return 3;\n  }\n\n  return 0;\n}\n\n// --------------------\n// 1. TÁCH DATA + QUERY\n// --------------------\nlet dataset = [];\nlet query = null;\n\nfor (const item of items) {\n\n  const json = item.json || {};\n\n  if (typeof json.data === \"string\") {\n    try {\n      const parsed = JSON.parse(json.data);\n      if (Array.isArray(parsed)) dataset.push(...parsed);\n    } catch {}\n  }\n\n  if (Array.isArray(json.subjects) || json.query_target) {\n    query = json;\n  }\n\n}\n\n// --------------------\n// GUARD\n// --------------------\nif (!query) {\n  return [{\n    json: {\n      type: \"CTDT\",\n      reason: \"NO_QUERY\",\n      total: 0,\n      data: []\n    }\n  }];\n}\n\n// --------------------\n// QUERY FIELD\n// --------------------\nconst totalCreditQuery = query.total_credit === true;\nconst subjects = query.subjects || [];\nconst semester = query.semester || \"\";\nconst credit = query.credit;\nconst bb_tc = query.bb_tc;\nconst prerequisiteSubjects = query.prerequisite_subjects || [];\nconst target = query.query_target;\n\nconst semesterNorm = semester ? semester.toUpperCase() : \"\";\nconst subjectNorm = subjects.map(s => normalizeText(s));\nconst prerequisiteNorm = prerequisiteSubjects.map(s => normalizeText(s));\n\n// --------------------\n// SINGLE LOOP FILTER\n// --------------------\nlet bestLevel = 999;\nlet tempMatches = [];\n\nfor (const item of dataset) {\n  if (!isValidSubject(item)) continue;\n  if (semesterNorm) {\n    if (String(item[\"Phân bổ học kỳ\"]).toUpperCase() !== semesterNorm) continue;\n  }\n\n  if (credit != null) {\n    if (Number(item[\"Số tín chỉ\"]) !== Number(credit)) continue;\n  }\n\n  const type = String(item[\"Bắt buộc/Tự chọn\"] || \"\").toUpperCase();\n\n  if (bb_tc === \"tc\") {\n    if (!type.includes(\"TC\")) continue;\n  }\n  \n  if (bb_tc === \"bb\") {\n    if (!type.includes(\"BB\")) continue;\n  }\n\n  if (target === \"subject_list\" && major) {\n    const groupNorm = normalizeText(item[\"group\"] || \"\");\n    if (groupNorm.includes(\"chuyen nganh\")) {\n      if (!groupNorm.includes(major)) continue;\n    }\n  }\n\n  let level = 0;\n\n  if (subjectNorm.length > 0) {\n\n    const name = item[\"Tên học phần\"];\n    const nameNorm = normalizeText(name);\n    const nameBase = normalizeText(item[\"_tenHocPhan_norm\"] || name);\n\n    for (const kw of subjectNorm) {\n\n      const l = getMatchLevel(kw, nameNorm, nameBase);\n\n      if (l > 0) {\n        level = l;\n        break;\n      }\n\n    }\n\n    if (level === 0) continue;\n  }\n\n  if (prerequisiteNorm.length > 0) {\n\n    const dk = normalizeText(item[\"ĐK tiên quyết\"] || \"\");\n\n    let ok = false;\n\n    for (const sub of prerequisiteNorm) {\n      if (dk.includes(sub)) {\n        ok = true;\n        break;\n      }\n    }\n\n    if (!ok) continue;\n  }\n\n  if (level < bestLevel) {\n    bestLevel = level;\n    tempMatches = [item];\n  } \n  else if (level === bestLevel) {\n    tempMatches.push(item);\n  }\n\n}\n\n// --------------------\n// TOTAL CREDIT\n// --------------------\n\nlet totalCredit = null;\n\nif (totalCreditQuery) {\n\n  if (semesterNorm) {\n\n  let seen = new Set();\n\n  for (const item of dataset) {\n\n    if (!isValidSubject(item)) continue;\n\n    const hk = String(item[\"Phân bổ học kỳ\"] || \"\").toUpperCase();\n\n    if (hk !== semesterNorm) continue;\n\n    const tc = Number(item[\"Số TC/ HK\"] || 0);\n\n    if (tc > 0) seen.add(tc);\n\n  }\n\n  totalCredit = [...seen].reduce((a,b)=>a+b,0);\n\n} else {\n\n    // tổng tín chỉ toàn khóa\n    const semesters = new Map();\n\n    for (const item of dataset) {\n\n      if (!isValidSubject(item)) continue;\n\n      const hk = String(item[\"Phân bổ học kỳ\"] || \"\").toUpperCase();\n\n      if (!hk) continue;\n\n      const tc = Number(item[\"Số TC/ HK\"] || 0);\n\n      if (!semesters.has(hk)) {\n        semesters.set(hk, tc);\n      }\n\n    }\n\n    totalCredit = [...semesters.values()].reduce((a,b)=>a+b,0);\n\n  }\n\n}\n\n// --------------------\n// RESULT\n// --------------------\nconst result = tempMatches.map(item => ({\n  \"Mã học phần\": item[\"Mã học phần\"],\n  \"Phân bổ học kỳ\": item[\"Phân bổ học kỳ\"],\n  \"Tên học phần\": item[\"Tên học phần\"],\n  \"Số tín chỉ\": item[\"Số tín chỉ\"],\n  \"Bắt buộc/Tự chọn\": item[\"Bắt buộc/Tự chọn\"],\n  \"ĐK tiên quyết\": item[\"ĐK tiên quyết\"],\n  \"ĐK học trước\": item[\"ĐK học trước\"],\n  \"group\": item[\"group\"]\n}));\n\n// --------------------\n// OUTPUT\n// --------------------\nreturn [{\n  json: {\n    type: \"CTDT\",\n    query_target: target,\n    subjects,\n    semester,\n    credit,\n    bb_tc,\n    prerequisite_subjects: prerequisiteSubjects,\n    total_credit: totalCreditQuery,\n    total_credit_value: totalCredit,\n    total: result.length,\n    data: result\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        -1120
+      ],
+      "id": "b73112a4-bdca-4a97-8e3d-8267669cf4fd",
+      "name": "inputAICTDT"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4320,
+        -1120
+      ],
+      "id": "e8a4e0ec-7fe8-4946-95ef-837c66735d0a",
+      "name": "Merge3"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4128,
+        -1216
+      ],
+      "id": "4b697aa5-cfe4-4bd1-a576-a7b9d730a914",
+      "name": "Get row(s) CTDT1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -1216
+      ],
+      "id": "1707567a-0ee4-4ac2-8a95-d772b9f0e3fe",
+      "name": "none2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet subjects = [];\nlet classCode = \"\";\nlet rows = [];\n\n// ======================\n// TÁCH INPUT\n// ======================\nfor (const item of items) {\n\n  const json = item.json;\n\n  // dataset\n  if (typeof json.data === \"string\") {\n    try {\n      const parsed = JSON.parse(json.data);\n      if (Array.isArray(parsed)) {\n        rows.push(...parsed);\n      }\n    } catch (e) {}\n  }\n\n  // AI output\n  if (Array.isArray(json.subjects)) {\n    subjects = json.subjects;\n    classCode = json.class || \"\";\n  }\n\n}\n\n// ======================\n// NORMALIZE\n// ======================\nfunction normalize(text) {\n  return String(text || \"\")\n    .toLowerCase()\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")\n    .trim();\n}\n\n// ======================\n// NORMALIZE THỨ\n// ======================\nfunction normalizeThu(text) {\n\n  const t = normalize(text);\n\n  if (t.includes(\"thu 2\") || t.includes(\"thu hai\")) return \"thu 2\";\n  if (t.includes(\"thu 3\") || t.includes(\"thu ba\")) return \"thu 3\";\n  if (t.includes(\"thu 4\") || t.includes(\"thu bon\")) return \"thu 4\";\n  if (t.includes(\"thu 5\") || t.includes(\"thu nam\")) return \"thu 5\";\n  if (t.includes(\"thu 6\") || t.includes(\"thu sau\")) return \"thu 6\";\n  if (t.includes(\"thu 7\") || t.includes(\"thu bay\")) return \"thu 7\";\n  if (t.includes(\"chu nhat\")) return \"cn\";\n\n  return \"\";\n}\n\n// ======================\n// NORMALIZE PERIOD\n// ======================\nfunction normalizePeriod(text) {\n\n  const t = String(text || \"\").trim();\n\n  const match = t.match(/^(\\d{1,2})\\s*-\\s*(\\d{1,2})$/);\n\n  if (!match) return \"\";\n\n  return `${match[1]} - ${match[2]}`;\n}\n\nfunction matchSubjectName(rowName, subjectName) {\n\n  const rowTokens = normalize(rowName).split(/\\s+/);\n  const subjectTokens = normalize(subjectName).split(/\\s+/);\n\n  return subjectTokens.every(token => rowTokens.includes(token));\n}\n\n// ======================\n// MATCH SUBJECT ROW\n// ======================\nfunction matchSubjectRow(row, subject) {\n\n  const rowName = row[\"_tenHocPhan_norm\"] || row[\"Tên HP\"];\n\n  if (!matchSubjectName(rowName, subject.name)) return false;\n\n  // day\n  if (subject.day) {\n\n    const rowThu = normalizeThu(row[\"Thứ\"]);\n    const subjectThu = normalizeThu(subject.day);\n\n    if (rowThu !== subjectThu) return false;\n  }\n\n  // period\n  if (subject.period) {\n\n    const rowPeriod = normalizePeriod(row[\"Tiết Học\"]);\n    const subjectPeriod = normalizePeriod(subject.period);\n\n    if (rowPeriod !== subjectPeriod) return false;\n  }\n\n  // room\n  if (subject.room) {\n\n    const roomNorm = normalize(row[\"Phòng\"]);\n    const subjectRoom = normalize(subject.room);\n\n    if (!roomNorm.includes(subjectRoom)) return false;\n  }\n\n  return true;\n}\n\n// ======================\n// FILTER\n// ======================\nlet matchedRows = [];\n\nfor (const subject of subjects) {\n\n  const filtered = rows.filter(row => {\n\n    if (!matchSubjectRow(row, subject)) return false;\n\n    if (classCode) {\n      const classNorm = normalize(classCode);\n      const rowClass = row[\"Mã LHP\"] || \"\";\n      const classPart = rowClass.split(\"_\").pop();\n      if (classNorm && classPart !== classNorm) return false;\n    }\n\n    return true;\n\n  });\n\n  matchedRows.push(...filtered);\n}\n\nconst displayRows = matchedRows.map(row => ({\n  \"Mã MH\": row[\"Mã MH\"],\n  \"Mã LHP\": row[\"Mã LHP\"],\n  \"Tên HP\": row[\"Tên HP\"],\n  \"Số TC\": row[\"Số TC\"],\n  \"Loại HP\": row[\"Loại HP\"],\n  \"Thứ\": row[\"Thứ\"],\n  \"Tiết BĐ\": row[\"Tiết BĐ\"],\n  \"Tiết Học\": row[\"Tiết Học\"],\n  \"Phòng\": row[\"Phòng\"]\n}));\n\n// ======================\n// RETURN\n// ======================\nreturn [\n  {\n    json: {\n      type: \"MH\",\n      subjects: subjects,\n      totalMatched: matchedRows.length,\n    }\n  },\n  {\n    json: {\n      type: \"LH\",\n      rows: displayRows\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4576,
+        -304
+      ],
+      "id": "215f7f97-3ca3-4c66-a927-56ec38b7e340",
+      "name": "inputAIMH"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  \n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -416
+      ],
+      "id": "1919a038-9a56-4958-86b9-7bcd6a2518e0",
+      "name": "none1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4336,
+        -304
+      ],
+      "id": "09058bd0-06af-45fc-bb9f-dae611884482",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "U1IDIwYQE0LWuOqS",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/sxDDPKfBS5xOrcGY/datatables/U1IDIwYQE0LWuOqS"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "sheet_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4144,
+        -416
+      ],
+      "id": "02927123-0144-47e7-b774-b86e4da2bc55",
+      "name": "Get row(s) MH"
+    },
+    {
+      "parameters": {
+        "jsCode": "return{\n  LH: $input.first().json.rows\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -1376
+      ],
+      "id": "5796f81e-be86-46ec-816c-b373f465c542",
+      "name": "aiLH"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nconst model = $('configAI').first().json.model;\nconst major = $('configAI').first().json.major;\nconst course = $('configAI').first().json.course;\nconst rawquestion = $('NormalizeAi').first().json.rawquestion;\n\n// dữ liệu đã filter\nconst data = items[0].json;\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI hỗ trợ trả lời câu hỏi về CHƯƠNG TRÌNH ĐÀO TẠO cho sinh viên.\n\n================================\nTHÔNG TIN SINH VIÊN\n================================\n\nSinh viên thuộc:\n\nkhóa: ${course}\n${major ? `chuyên ngành: ${major}` : \"\"}\n\nLuôn bắt đầu câu trả lời bằng thông tin trên.\n\n================================\nDỮ LIỆU ĐẦU VÀO\n================================\n\nBạn sẽ nhận dữ liệu JSON gồm các field sau:\n\nquery_target\nsubjects\nsemester\ncredit\nbb_tc\nprerequisite_subjects\ntotal_credit\ntotal_credit_value\ntotal\ndata\n\nÝ nghĩa các field:\n\nsubjects\n→ danh sách môn học sinh viên đang hỏi\n\nsemester\n→ học kỳ của môn\n\ncredit\n→ số tín chỉ\n\nbb_tc\n→ loại môn học\nbb = bắt buộc\ntc = tự chọn\n\nprerequisite_subjects\n→ môn tiên quyết\n\ntotal_credit\n→ cho biết sinh viên có đang hỏi tổng số tín chỉ hay không\n\ntotal_credit_value\n→ giá trị tổng tín chỉ đã được hệ thống tính sẵn\n\ntotal\n→ tổng số môn học tìm được\n\ndata\n→ danh sách môn học phù hợp\n\n================================\nQUERY TARGET\n================================\n\nquery_target cho biết sinh viên đang hỏi thông tin gì.\n\nCác giá trị phổ biến:\n\nsubject_list\n→ sinh viên muốn liệt kê môn học\n\ncredit\n→ sinh viên hỏi thông tin về số tín chỉ của môn\n\nsemester\n→ sinh viên hỏi môn thuộc học kỳ nào\n\nbb_tc\n→ sinh viên hỏi môn có phải bắt buộc hay tự chọn\n\nprerequisite\n→ sinh viên hỏi môn tiên quyết\n\ntotal_credit\n→ sinh viên hỏi tổng số tín chỉ\n\nQuy tắc trả lời:\n\nNếu query_target = subject_list\n→ liệt kê các môn trong data.\n\nNếu query_target = credit\n→ chỉ trả lời số tín chỉ của môn.\n\nNếu query_target = semester\n→ chỉ trả lời học kỳ của môn.\n\nNếu query_target = bb_tc\n→ cho biết môn là bắt buộc hay tự chọn.\n\nNếu query_target = prerequisite\n→ cho biết môn tiên quyết nếu có.\n\nNếu total_credit = true\n\n→ Không cần liệt kê môn học.\n→ Chỉ trả lời tổng số tín chỉ.\n\nNếu semester có dữ liệu  \n→ trả lời tổng tín chỉ của học kỳ đó.\n\nNếu semester rỗng  \n→ trả lời tổng tín chỉ toàn bộ chương trình đào tạo.\n\nSử dụng giá trị total_credit_value để trả lời.\n\nMỗi phần tử trong data có cấu trúc:\n\n{\n\"Mã học phần\": \"\",\n\"Phân bổ học kỳ\": \"\",\n\"Tên học phần\": \"\",\n\"Số tín chỉ\": \"\",\n\"Bắt buộc/Tự chọn\": \"\",\n\"ĐK tiên quyết\": \"\",\n\"ĐK học trước\": \"\",\n\"group\": \"\"\n}\n\nDữ liệu đầu vào thực tế:\n\nsubjects:\n${JSON.stringify(data.subjects, null, 2)}\n\nsemester:\n${data.semester}\n\ncredit:\n${data.credit}\n\nbb_tc:\n${data.bb_tc}\n\nprerequisite_subjects:\n${JSON.stringify(data.prerequisite_subjects, null, 2)}\n\ntotal_credit:\n${data.total_credit}\n\ntotal_credit_value:\n${data.total_credit_value}\n\ntotal:\n${data.total}\n\ndata:\n${JSON.stringify(data.data, null, 2)}\n\n================================\nCÁCH TRẢ LỜI\n================================\n\nBước 1  \nXác nhận thông tin sinh viên.\n\nBước 2  \nDiễn giải lại Ý ĐỊNH của sinh viên dựa trên dữ liệu query.\n\nVí dụ:\n\nNếu subjects có dữ liệu  \n→ nói sinh viên đang tìm môn đó.\n\nNếu semester có dữ liệu  \n→ nói sinh viên đang tìm môn thuộc học kỳ đó.\n\nNếu credit có dữ liệu  \n→ nói sinh viên đang tìm môn có số tín chỉ đó.\n\nNếu bb_tc = bb  \n→ nói sinh viên đang tìm môn bắt buộc.\n\nNếu bb_tc = tc  \n→ nói sinh viên đang tìm môn tự chọn.\n\nNếu prerequisite_subjects có dữ liệu  \n→ nói sinh viên đang tìm môn có môn tiên quyết tương ứng.\n\nNếu total_credit = true → bỏ qua bước hiển thị số môn học.\n\nChỉ nhắc lại các thông tin KHÔNG rỗng.\n\nBước 3  \nThông báo số môn học tìm được:\n\n\"Số môn học phù hợp: <total>\"\n\nBước 4  \nNếu total > 0  \n→ liệt kê các môn trong data.\n\nMỗi môn hiển thị:\n\nTên học phần\nMã học phần\nPhân bổ học kỳ\nSố tín chỉ\nLoại môn (Bắt buộc / Tự chọn)\n\nNếu có ĐK tiên quyết hoặc ĐK học trước thì hiển thị thêm.\n\nVí dụ format:\n\nMôn: <Tên học phần>\nMã học phần: <Mã học phần>\nHọc kỳ: <Phân bổ học kỳ>\nSố tín chỉ: <Số tín chỉ>\nLoại: <Bắt buộc/Tự chọn>\n\n================================\nQUY TẮC\n================================\n\n1. Không được tự tạo dữ liệu mới.\n2. Chỉ sử dụng dữ liệu có trong JSON input.\n3. Không hiển thị JSON trong câu trả lời.\n4. Nếu total = 0 → thông báo không tìm thấy môn phù hợp.\n5. Chỉ trả về nội dung dạng văn bản.\n6. Câu trả lời phải tự nhiên, dễ hiểu cho sinh viên.\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: model,\n      messages: [\n        {\n          role: \"system\",\n          content: systemPrompt\n        },\n        {\n          role: \"user\",\n          content: rawquestion\n        }\n      ],\n      temperature: 0.2\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -1520
+      ],
+      "id": "5d33945e-baf0-4922-9317-5bad9dae79e1",
+      "name": "aiCTDT"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        7040,
+        -1584
+      ],
+      "id": "ca7ee63b-e3ea-4b71-adbe-2260a351d94b",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4512,
+        -2032
+      ],
+      "id": "c70db807-186d-415c-a8a5-542ae78ad6b5",
+      "name": "inputAITN"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -2000
+      ],
+      "id": "5f32e874-a1ed-42c2-b3bc-ace99707932f",
+      "name": "aiTN"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6720,
+        -1712
+      ],
+      "id": "f8d5dea1-39b8-4eab-8251-93f6771457cf",
+      "name": "HTTP Request AI",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapValue(v, maxDepth = 5) {\n  let cur = v;\n  let depth = 0;\n\n  while (\n    cur &&\n    typeof cur === 'object' &&\n    !Array.isArray(cur) &&\n    depth < maxDepth\n  ) {\n    const keys = Object.keys(cur);\n    if (keys.length !== 1) break;\n    cur = cur[keys[0]];\n    depth++;\n  }\n\n  return cur;\n}\n\nconst items = $input.all();\n\nlet ai_content = null;\nlet LH = null;\n\nfor (const it of items) {\n  const json = it.json;\n\n  // Case 1: AI node kiểu OpenAI\n  if (json?.choices?.[0]?.message?.content) {\n    ai_content = json.choices[0].message.content;\n    continue;\n  }\n\n  // Case 2: AI đã normalize thành ai_content\n  if (typeof json?.ai_content === 'string') {\n    ai_content = json.ai_content;\n    continue;\n  }\n\n  // Case 3: LH hoặc object lồng\n  if (json?.LH !== undefined) {\n    LH = unwrapValue(json.LH);\n    continue;\n  }\n\n  // Case 4: object chỉ có 1 key (anti lồng)\n  const values = Object.values(json);\n  if (values.length === 1 && typeof values[0] === 'string') {\n    LH = values[0];\n  }\n}\n\nreturn [\n  {\n    json: {\n      ai_content,\n      LH\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7488,
+        -1872
+      ],
+      "id": "bc632374-6584-473c-9c09-b423d90dc6cc",
+      "name": "output"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  ai_content: $json.ai_content,\n  LH: $json.LH\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        7792,
+        -1872
+      ],
+      "id": "54df64ce-c354-4959-9f96-1971286aad90",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -2320
+      ],
+      "id": "1908b099-0889-4ebc-b377-2c80d984cf73",
+      "name": "infoTN"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "60ce852f-ec81-41b7-93f8-a42128423594",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3616,
+        -2032
+      ],
+      "id": "acf2ce4b-0f24-45b5-9da5-24add692d4b7",
+      "name": "If6"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4304,
+        -2032
+      ],
+      "id": "14ac928a-0a18-4cc2-9f85-d2edeccf6c0a",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        4080,
+        -2112
+      ],
+      "id": "55678e50-bfab-459d-b10c-e59d37a2942a",
+      "name": "Get row(s) CTDT"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        -2112
+      ],
+      "id": "06682b38-3d5e-4eae-953a-cb073437dd39",
+      "name": "none"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawquestion = $('NormalizeAi').first().json.rawquestion;\n\nif (!items.length) {\n  return [{ json: { success: false, error: \"No input\" } }];\n}\n\nconst input = items[0].json\nlet parsed = {};\n\ntry {\n  const content = input.choices?.[0]?.message?.content || \"{}\";\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = {};\n}\n\nreturn [{\n  json: {\n    subjects: parsed.subjects,\n    target: parsed.target,\n    rawquestion: rawquestion\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -288
+      ],
+      "id": "03045e41-414f-49ef-a272-0d20f5f47e84",
+      "name": "parse2JSON5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -768
+      ],
+      "id": "c8e85af0-defe-4379-b97a-c171f3aebe58",
+      "name": "parse2JSON4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawquestion = $('NormalizeAi').first().json.rawquestion;\n\nif (!items.length) {\n  return [{ json: { success: false, error: \"No input\" } }];\n}\n\nconst input = items[0].json\nlet parsed = {};\n\ntry {\n  const content = input.choices?.[0]?.message?.content || \"{}\";\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = {};\n}\n\nreturn [{\n  json: {\n    subjects: parsed.subjects,\n    semester: parsed.semester,\n    credit: parsed.credit,\n    bb_tc: parsed.bb_tc,\n    prerequisite_subjects: parsed.prerequisite_subjects,\n    query_target: parsed.query_target,\n    total_credit: parsed.total_credit,\n    rawquestion: rawquestion\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        -1104
+      ],
+      "id": "cd1cc644-7428-4008-b2c3-801512e765d6",
+      "name": "parse2JSON3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        -1408
+      ],
+      "id": "566e3fba-1754-4027-a6c8-ceba685735c9",
+      "name": "parse2JSON2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -1824
+      ],
+      "id": "357650b6-6d25-497b-8c9a-afaedf2fba3e",
+      "name": "parse2JSON1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        -2032
+      ],
+      "id": "0baa7e48-1e03-4494-abcb-87b39daf3fa3",
+      "name": "parse2JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sheets = items[0].json.sheets || [];\nconst spreadsheetId = $input.first().json.spreadsheetId;\n\nreturn sheets.map(s => ({\n  json: {\n    spreadsheetId,\n    sheetName: s.properties.title\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        -144
+      ],
+      "id": "d1e007f0-2f3c-4473-a69b-b39d8b4cdf92",
+      "name": "getDataCTDT"
+    },
+    {
+      "parameters": {
+        "jsCode": "function removeVietnameseDiacritics(str) {\n  return str\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/đ/g, 'd')\n    .replace(/Đ/g, 'D');\n}\n\nconst SEARCH_FIELDS = [\n  \"Mã MH\",\n  \"Mã LHP\",\n  \"Số TC\",\n  \"Loại HP\",\n  \"Thứ\",\n  \"Tiết Học\",\n  \"Phòng\",\n  \"Ghi Chú\"\n];\n\nconst normalized = items.map(i => {\n  const data = i.json;\n\n  const tenHocPhan = data[\"Tên HP\"] ?? \"\";\n\n  const tenHocPhanNorm = removeVietnameseDiacritics(tenHocPhan)\n    .toLowerCase()\n    .trim();\n\n  const searchText = SEARCH_FIELDS\n    .map(key => data[key])\n    .filter(v => typeof v === 'string' || typeof v === 'number')\n    .join(' ')\n    .toLowerCase();\n\n  return {\n    json: {\n      ...data,\n      _search: searchText,\n      _tenHocPhan_norm: tenHocPhanNorm\n    }\n  };\n});\n\nreturn normalized;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -528
+      ],
+      "id": "64eb9dee-33ed-4855-921f-edb11a96f454",
+      "name": "getMH1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sheets = items[0].json.sheets || [];\nconst spreadsheetId = $input.first().json.spreadsheetId;\n\nreturn sheets.map(s => ({\n  json: {\n    spreadsheetId,\n    sheetName: s.properties.title\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        -832
+      ],
+      "id": "2e52b6ee-26bd-43bc-975e-66dd767a1ff2",
+      "name": "getDataMH"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "sheet_cache"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data": "={{ JSON.stringify($json.data) }}",
+            "total": "={{ $json.total }}",
+            "cache_key": "={{ 'sheet_cache' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "cache_key",
+              "displayName": "cache_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "data",
+              "displayName": "data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        224,
+        -848
+      ],
+      "id": "8e097fbe-1670-4051-8e96-4bbd8e5a8ca9",
+      "name": "Upsert row(s) MH"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data": "={{ JSON.stringify($json.data) }}",
+            "total": "={{ $json.total }}",
+            "cache_key": "={{ 'ctdt_cache' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "cache_key",
+              "displayName": "cache_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "data",
+              "displayName": "data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        272,
+        -160
+      ],
+      "id": "095a97a9-800b-420a-8967-e99f476b9da1",
+      "name": "Upsert row(s) CTDT"
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1KYVqHXbH1cnVG_rrqrA4-9ny1GFJx1JfW5uj67FpMiM",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -928,
+        -144
+      ],
+      "id": "345293bb-5ef5-4905-b9a8-e4bd6dd1dd62",
+      "name": "HTTP Request1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IJ7ketXaIkRYomuV",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -416,
+        -144
+      ],
+      "id": "8f78050c-07e4-4ed2-bb0c-82b66853c49f",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "jsCode": "function removeVietnameseDiacritics(str) {\n  return String(str)\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/đ/g, 'd')\n    .replace(/Đ/g, 'D');\n}\n\nconst SEARCH_FIELDS = [\n  \"Khóa\",\n  \"Phân bổ học kỳ\",\n  \"Mã học phần\",\n  \"Số tín chỉ\",\n  \"Bắt buộc/Tự chọn\",\n  \"ĐK tiên quyết\",\n  \"ĐK học trước\"\n];\n\n// fill down cho merge cell\nlet lastValues = {};\n\n// group theo mã học phần header\nlet currentGroup = null;\n\nconst normalized = items.map(i => {\n  const data = { ...i.json };\n\n  // Fill down các cột hay merge\n  [\"Khóa\", \"Phân bổ học kỳ\", \"Số TC/nhóm\", \"Số TC/ HK\"].forEach(key => {\n    if (data[key] === \"\" || data[key] == null) {\n      data[key] = lastValues[key] ?? \"\";\n    } else {\n      lastValues[key] = data[key];\n    }\n  });\n\n  // Điều kiện nhận diện row GROUP\n  const isGroupRow =\n    data[\"Mã học phần\"] &&\n    [\n      \"Tên học phần\",\n      \"Số tín chỉ\",\n      \"LT\",\n      \"TH\",\n      \"TT\",\n      \"Bắt buộc/Tự chọn\",\n      \"ĐK tiên quyết\",\n      \"ĐK học trước\"\n    ].every(key => data[key] === \"\" || data[key] == null);\n\n  if (isGroupRow) {\n    // cập nhật group mới\n    currentGroup = data[\"Mã học phần\"];\n  }\n\n  // gán group cho tất cả row\n  data.group = currentGroup;\n\n  const tenHocPhan = data[\"Tên học phần\"] ?? \"\";\n\n  const tenHocPhanNorm = removeVietnameseDiacritics(tenHocPhan)\n    .toLowerCase()\n    .trim();\n\n  const searchText = SEARCH_FIELDS\n    .map(key => data[key])\n    .filter(v => typeof v === 'string' || typeof v === 'number')\n    .join(' ')\n    .toLowerCase();\n\n  return {\n    json: {\n      ...data,\n      _search: searchText,\n      _tenHocPhan_norm: tenHocPhanNorm\n    }\n  };\n});\n\nreturn normalized;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        208
+      ],
+      "id": "46f06a0d-70b6-4b0b-834a-919b45e5eda6",
+      "name": "getCTDT"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gom toàn bộ items thành 1 item duy nhất\nconst all = items.map(i => i.json);\n\nreturn [\n  {\n    json: {\n      data: all,\n      total: all.length,\n      cache_key: 'ctdt_cache'\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -160
+      ],
+      "id": "30e51a53-6e57-4d51-a965-79b2a51ce0eb",
+      "name": "mergeItem"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1KYVqHXbH1cnVG_rrqrA4-9ny1GFJx1JfW5uj67FpMiM",
+          "mode": "list",
+          "cachedResultName": "n8n-test",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KYVqHXbH1cnVG_rrqrA4-9ny1GFJx1JfW5uj67FpMiM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.sheetName }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -48,
+        208
+      ],
+      "id": "7a3f8ca8-f1b4-45b6-bb61-7865f2e30508",
+      "name": "Get row(s) in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IJ7ketXaIkRYomuV",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1280,
+        -144
+      ],
+      "id": "1749c93b-b691-491f-97fa-5312ea5a9bf3",
+      "name": "Schedule Trigger1"
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/17XCuec_vzvLBH7ZMiFC5PgyrFcL_Rvl1qvbOkUnXXxk",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -960,
+        -832
+      ],
+      "id": "2f50810a-44b2-43e4-b030-39f330dbdd7d",
+      "name": "HTTP Request",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IJ7ketXaIkRYomuV",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gom toàn bộ items thành 1 item duy nhất\nconst all = items.map(i => i.json);\n\nreturn [\n  {\n    json: {\n      data: all,\n      total: all.length,\n      cache_key: 'sheet_cache'\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -848
+      ],
+      "id": "b88691c4-9522-4031-96a8-38630342514a",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{$json.spreadsheetId}}\n",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.sheetName }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -80,
+        -528
+      ],
+      "id": "38dde736-7a87-4fd8-a7dd-c5b59eb5bbd7",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IJ7ketXaIkRYomuV",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -448,
+        -832
+      ],
+      "id": "7f5590db-b32e-47ec-adfd-96219f0b802c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1312,
+        -480
+      ],
+      "id": "630cd077-18d2-45da-87ee-160e7acef5d8",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1312,
+        -832
+      ],
+      "id": "f9d42de8-c175-4bc9-89e4-03215d6d127f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.body?.message) {\n    userMessage = item.json.body.message;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên.\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu.\nKHÔNG xác định intent.\nKHÔNG tư vấn.\nKHÔNG suy luận ngoài dữ liệu có trong câu hỏi.\n\n================================\nTHỨ TỰ THỰC HIỆN (BẮT BUỘC)\n================================\n1. Đọc toàn bộ câu hỏi\n2. Trích xuất TÊN MÔN HỌC hợp lệ (ưu tiên cao nhất)\n3. Trích xuất keywords\n4. Trích xuất time_keywords\n5. Trích xuất period_keywords\n6. Trích xuất credit\n7. Xác định bb_tc\n8. Sao chép rawQuestion (100% nguyên văn)\n\n================================\nTÊN MÔN HỌC\n================================\n\n- Là tên cụ thể của một môn học.\n- Có thể gồm nhiều từ.\n- Phải giữ nguyên cụm.\n- Không được tách nhỏ.\n\nVí dụ hợp lệ:\n\"anh văn\"\n\"anh văn 6\"\n\"toán cao cấp 2\"\n\"cấu trúc dữ liệu\"\n\"Lịch sử Đảng Cộng sản Việt Nam\"\n\nCác từ như:\n\"môn\", \"môn học\", \"học phần\", \"lớp\"\n→ KHÔNG được coi là tên môn học.\n\n--------------------------------\nMÔN CÓ SỐ THỨ TỰ\n--------------------------------\n\nNếu tên môn có dạng:\n<ten mon> + <số>\n\nVÀ số đó KHÔNG đi kèm:\n\"học kỳ\", \"hk\", \"khóa\", \"k\", \"tín chỉ\", \"tc\"\n\n→ coi số là một phần của tên môn.\n→ giữ nguyên toàn bộ cụm trong subject_keywords.\n→ không tách số ra.\n→ không đưa số vào keywords hay time_keywords.\n\n================================\nKEYWORDS\n================================\n\nChứa thông tin dùng để lọc:\n\n- Khóa Nếu phát hiện:\n  \"khóa <số>\"\n  \"k <số>\"\n  \"k<số>\"\n  → bắt buộc chuẩn hóa thành \"K<số>\" ví dụ khóa 28 ,k28 ,k 28 thì chuẩn hóa thành K28\n\n- Phân loại: bắt buộc, tự chọn, đại cương, chuyên ngành\n- Chương trình đào tạo\n\nNếu phát hiện khóa:\n→ bắt buộc đưa vào keywords.\n→ không đưa vào time_keywords.\n\n================================\nHỌC KỲ\n================================\n\nDạng hợp lệ:\n\"học kỳ <1-10>\"\n\"hk<1-10>\"\n\nNếu hợp lệ:\n→ đưa \"học kỳ <số>\" vào time_keywords.\n\nNếu số > 10:\n→ bỏ qua hoàn toàn.\n\n================================\nTIẾT HỌC\n================================\n\nNếu có cụm dạng:\n(1-3), (4-6), (7-9)...\n\n→ đưa vào period_keywords.\n→ không đưa vào time_keywords.\n\n================================\nPHÂN LOẠI BẮT BUỘC / TỰ CHỌN\n================================\n\nNếu trong câu hỏi có:\n- \"bắt buộc\", \"môn bắt buộc\", \"học bắt buộc\"\n→ bb_tc = \"bb\"\n\nNếu có:\n- \"tự chọn\", \"môn tự chọn\", \"học tự chọn\"\n→ bb_tc = \"tc\"\n\nNếu không nhắc tới:\n→ bb_tc = null\n\nKhông suy diễn nếu câu hỏi không nhắc rõ.\n\nrequired_keywords:\n- Chỉ dùng khi được hỏi về điều kiện tiên quyết.\n- Nếu câu hỏi có dạng:\n  \"môn A yêu cầu môn gì\"\n  \"điều kiện tiên quyết để học môn A là gì\"\n  \"Để học môn A cần học môn gì trước\"\n→ trích xuất tên môn trong phần đó.\n\n================================\nTÍN CHỈ (credit)\n================================\n\nChỉ coi là tín chỉ khi:\n\n- Có cụm đầy đủ: \"tín chỉ\"\n- Hoặc \"tc\" đứng sau một con số\n\nVí dụ hợp lệ:\n\"3 tín chỉ\"\n\"3 tc\"\n\"môn này 2 tín chỉ\"\n\nvà credit.value chỉ được gán khi tồn tại MỘT CON SỐ CỤ THỂ đứng ngay trước tín chỉ hoặc tc nhưng mang nghĩa tín chỉ:\nVí dụ hợp lệ:\n\"3 tín chỉ\" → value = 3\n\"2 tc\" → value = 2\nNếu câu hỏi chỉ có:\n\"bao nhiêu tín chỉ\"\n\"có bao nhiêu tín chỉ\"\n\"tổng bao nhiêu tín chỉ\"\n\nHOẶC không có con số cụ thể đứng trước \"tín chỉ\" hoặc \"tc\"\ncredit.value = null\n→ TUYỆT ĐỐI KHÔNG được gán 0\n→ TUYỆT ĐỐI KHÔNG được tự suy đoán số\n\nTrường hợp KHÔNG được coi là tín chỉ:\n\n- \"tự chọn\"\n- \"môn tự chọn\"\n- \"học tự chọn\"\n- \"tc\" xuất hiện như viết tắt của \"tự chọn\"\n\n--------------------------------\nQUY TẮC PHÂN BIỆT \"tc\"\n--------------------------------\n\nNếu \"tc\" xuất hiện:\n\n1. Nếu có số ngay trước nó → là tín chỉ.\n   Ví dụ: \"3 tc\" → credit.value = 3\n\n2. Nếu không có số đứng trước → không phải tín chỉ.\n   Ví dụ:\n   \"môn tc\"\n   \"học tc\"\n   → hiểu là \"tự chọn\", không liên quan credit.\n\n--------------------------------\nCREDIT SCOPE\n--------------------------------\n\nChỉ xác định scope khi credit.mentioned = true.\n\nsubject:\n- Có tên môn cụ thể.\n- Hỏi số tín chỉ của môn đó.\n\nsemester:\n- Có \"học kỳ <số>\" hoặc \"hk<số>\".\n\ncourse:\n- Hỏi tổng tín chỉ toàn khóa hoặc toàn CTDT.\n- Không có học kỳ cụ thể.\n\nfilter:\n- Dùng số tín chỉ để lọc môn.\n- Không phải câu hỏi tổng.\n\n--------------------------------\nQUY TẮC ƯU TIÊN\n--------------------------------\n\n1. Nếu có tên môn → subject\n2. Nếu không có môn nhưng có học kỳ → semester\n3. Nếu không có học kỳ nhưng hỏi tổng toàn khóa/CTDT → course\n4. Nếu chỉ dùng số để lọc → filter\n\nChỉ chọn đúng 1 scope.\n\n================================\nRAW QUESTION\n================================\n\nrawQuestion:\n- Sao chép 100% nguyên văn.\n- Không chỉnh sửa.\n- Không chuẩn hóa.\n- Không rút gọn.\n- Không để rỗng.\n\n================================\nOUTPUT\n================================\n\nChỉ trả về 1 JSON object duy nhất.\nKhông giải thích.\nKhông code block.\n\n{\n  \"keywords\": [],\n  \"subject_keywords\": [],\n  \"time_keywords\": [],\n  \"location_keywords\": [],\n  \"period_keywords\": [],\n  \"required_keywords\": [],\n  \"credit\": {\n    \"mentioned\": false,\n    \"value\": null,\n    \"scope\": null\n  },\n  \"bb_tc\": null,\n  \"rawQuestion\": \"\"\n}\n`\n;\n\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: $env.AI_MODEL1,\n      messages: [\n        {\n          role: 'system',\n          content: systemPrompt\n        },\n        {\n          role: 'user',\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1 // Giảm nhiệt độ để output ổn định hơn\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        -1408
+      ],
+      "id": "ee27237d-5ba7-45d1-ba7b-8b663c96f362",
+      "name": "advice"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3216,
+        -1408
+      ],
+      "id": "11cbc148-cdcb-442a-8bf1-089c7e9d9b2c",
+      "name": "aiKeyword",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "299ba81a-a740-4d8d-b842-b37d45a36f94",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "ctdt",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2672,
+        -1248
+      ],
+      "id": "7a12e679-b062-460d-939d-c06329f31692",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nconst model = $('configAI').first().json.model;\n\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.rawquestion) {\n    userMessage = item.json.rawquestion;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên.\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu.\nKHÔNG tư vấn.\nKHÔNG giải thích.\nKHÔNG suy luận ngoài dữ liệu có trong câu hỏi.\n\n================================\nOUTPUT JSON\n================================\n\nChỉ trả về đúng cấu trúc sau:\n\n{\n  \"subjects\": [\n    {\n      \"name\": \"\",\n      \"day\": \"\",\n      \"period\": \"\",\n      \"class\": \"\",\n      \"room\": \"\"\n    }\n  ],\n  \"target\": []\n}\n\nKhông thêm field khác.\n\n================================\nSUBJECTS\n================================\n\nsubjects là danh sách môn học.\n\nMỗi môn học là một object gồm:\n\nname\nday\nperiod\nclass\nroom\n\nQuy tắc:\n\nname:\n- là tên môn học\n- giữ nguyên cụm từ\n- viết chữ thường\n\nVí dụ:\n\n\"cấu trúc dữ liệu\"\n\"toán cao cấp 2\"\n\"anh văn 6\"\n\"java\"\n\nNếu câu hỏi chứa nhiều môn học\n→ tạo nhiều object trong subjects theo thứ tự xuất hiện.\n\n================================\nDAY\n================================\n\nday là thứ trong tuần của môn đó.\n\nDạng hợp lệ:\n\nthứ 2\nthứ 3\nthứ 4\nthứ 5\nthứ 6\nthứ 7\nchủ nhật\n\nbên cạnh đó các thứ trong tuần còn có cách viết tương đương\n\nthứ hai = thứ 2 = t2\nthứ ba = thứ 3 = t3\nthứ tư = thứ 4 = t4\nthứ năm = thứ 5 = t5\nthứ sáu = thứ 6 = t6\nthứ bảy = thứ 7 = t7\nchủ nhật = cn\nVí dụ:\n\n\"java thứ 5\"\n\n→\n\n{\n\"name\": \"java\",\n\"day\": \"thứ 5\"\n}\n\nNếu không có thông tin\n→ day = \"\"\n\n================================\nPERIOD\n================================\n\nperiod là tiết học của môn.\n\nVí dụ hợp lệ:\n\n1-3\n4-6\n7-9\n\nChỉ lấy phần số.\n\nVí dụ:\n\n\"(1-3)\" → \"1-3\"\n\nNếu không có\n→ period = \"\"\n\n================================\nROOM\n================================\n\nroom là phòng học của môn.\n\nVí dụ:\n\nA101\nB203\n301\n\nChỉ trả mã phòng.\n\nNếu không có\n→ room = \"\"\n\n================================\nCLASS\n================================\n\nclass là mã lớp.\n\nVí dụ hợp lệ:\n\nIT01\nCNTT02\nDHTH17A\n\nNếu không có\n→ class = \"\"\n\n================================\nTARGET\n================================\n\ntarget xác định sinh viên đang hỏi thông tin gì.\n\nCác giá trị hợp lệ:\n\nday\nperiod\nroom\n\nQuy tắc:\n\n\"học thứ mấy\"\n→ day\n\n\"học tiết mấy\"\n→ period\n\n\"học phòng nào\"\n→ room\n\nNếu câu hỏi hỏi nhiều thông tin\n→ đưa tất cả vào target.\n\n================================\nVÍ DỤ\n================================\n\nCâu hỏi:\n\n\"cho biết môn java thứ 5 và toán thứ 2\"\n\nOutput:\n\n{\n  \"subjects\": [\n    {\n      \"name\": \"java\",\n      \"day\": \"thứ 5\",\n      \"period\": \"\",\n      \"class\": \"\",\n      \"room\": \"\"\n    },\n    {\n      \"name\": \"toán\",\n      \"day\": \"thứ 2\",\n      \"period\": \"\",\n      \"class\": \"\",\n      \"room\": \"\"\n    }\n  ],\n  \"target\": [\"day\"]\n}\n\n================================\nQUY TẮC BẮT BUỘC\n================================\n\n1. Không được thêm field mới.\n2. Không được suy đoán dữ liệu.\n3. Nếu không có thông tin → dùng giá trị rỗng.\n4. subjects phải giữ đúng thứ tự môn trong câu hỏi.\n5. Chỉ trả về JSON object duy nhất.\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: model,\n      messages: [\n        {\n          role: 'system',\n          content: systemPrompt\n        },\n        {\n          role: 'user',\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1 // Giảm nhiệt độ để output ổn định hơn\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        -288
+      ],
+      "id": "a7309951-86d9-441a-9b1f-7c78ba5c4213",
+      "name": "mh"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\n\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.body?.message) {\n    userMessage = item.json.body.message;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên.\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu.\nKHÔNG tư vấn.\nKHÔNG giải thích.\nKHÔNG suy luận ngoài dữ liệu có trong câu hỏi.\n\n================================\nOUTPUT JSON\n================================\n\nChỉ trả về đúng cấu trúc sau:\n\n{\n  \"subjects\": [],\n  \"class\": \"\",\n  \"day\": \"\",\n  \"period\": \"\",\n  \"room\": \"\",\n  \"target\": []\n}\n\nKhông thêm field khác.\n\n================================\nSUBJECTS\n================================\n\nsubjects là danh sách tên môn học.\n\nQuy tắc:\n\n- Là tên môn học cụ thể\n- Có thể gồm nhiều từ\n- Giữ nguyên cụm\n- Không tách nhỏ\n\nVí dụ hợp lệ:\n\n\"cấu trúc dữ liệu\"\n\"toán cao cấp 2\"\n\"anh văn 6\"\n\"lịch sử đảng cộng sản việt nam\"\n\nCác từ sau KHÔNG phải môn học:\n\n\"môn\"\n\"học phần\"\n\"lớp\"\n\"môn học\"\n\nNếu câu hỏi chứa nhiều môn học\n→ đưa tất cả vào subjects theo thứ tự xuất hiện.\n\nNếu không có môn\n→ subjects = []\n\n================================\nCLASS\n================================\n\nclass là mã lớp.\n\nVí dụ hợp lệ:\n\nIT01  \nCNTT02  \nDHTH17A\n\nNếu câu hỏi không nhắc lớp\n→ class = \"\"\n\n================================\nDAY\n================================\n\nday là thứ trong tuần.\n\nDạng hợp lệ:\n\nthứ 2  \nthứ 3  \nthứ 4  \nthứ 5  \nthứ 6  \nthứ 7  \nchủ nhật\n\nOutput:\n\n\"thứ 2\"\n\"thứ 3\"\n...\n\nNếu không có thông tin\n→ day = \"\"\n\n================================\nPERIOD\n================================\n\nperiod là tiết học.\n\nVí dụ hợp lệ:\n\n1-3  \n4-6  \n7-9\n\nChỉ lấy phần số.\n\nVí dụ:\n\n\"(1-3)\" → \"1-3\"\n\nNếu không có\n→ period = \"\"\n\n================================\nROOM\n================================\n\nroom là phòng học.\n\nVí dụ:\n\nA101  \nB203  \nphòng 301\n\nChỉ trả mã phòng.\n\nNếu không có\n→ room = \"\"\n\n================================\nTARGET\n================================\n\ntarget xác định sinh viên đang hỏi thông tin gì.\n\nCó thể gồm nhiều giá trị.\n\nCác giá trị hợp lệ:\n\ncredit\nsemester\nprerequisite\nday\nperiod\nroom\n\nQuy tắc:\n\nNếu hỏi:\n\n\"bao nhiêu tín chỉ\"\n→ thêm \"credit\"\n\n\"học kỳ mấy\"\n→ thêm \"semester\"\n\n\"môn tiên quyết\"\n\"cần học môn gì trước\"\n→ thêm \"prerequisite\"\n\n\"học thứ mấy\"\n→ thêm \"day\"\n\n\"học tiết mấy\"\n→ thêm \"period\"\n\n\"học phòng nào\"\n→ thêm \"room\"\n\nNếu câu hỏi hỏi nhiều thông tin\n→ đưa tất cả vào target.\n\nVí dụ:\n\n\"cấu trúc dữ liệu học thứ mấy và bao nhiêu tín chỉ\"\n\ntarget:\n\n[\"day\",\"credit\"]\n\n================================\nQUY TẮC BẮT BUỘC\n================================\n\n1. Không được thêm field mới.\n2. Không được suy đoán dữ liệu.\n3. Nếu không có thông tin → dùng giá trị rỗng.\n4. subjects phải viết chữ thường.\n5. Chỉ trả về JSON object duy nhất.\n`\n;\n\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: $env.AI_MODEL1,\n      messages: [\n        {\n          role: 'system',\n          content: systemPrompt\n        },\n        {\n          role: 'user',\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1 // Giảm nhiệt độ để output ổn định hơn\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        -768
+      ],
+      "id": "7c6f36b3-0adf-4250-ade6-badc17854322",
+      "name": "both"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nconst model = $('configAI').first().json.model;\n\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.rawquestion) {\n    userMessage = item.json.rawquestion;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên liên quan đến chương trình đào tạo (CTDT).\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu từ câu hỏi.\nKHÔNG tư vấn.\nKHÔNG giải thích.\nKHÔNG thêm thông tin ngoài câu hỏi.\n\n================================\nOUTPUT JSON\n================================\n\nChỉ trả về đúng cấu trúc sau:\n\n{\n  \"subjects\": [],\n  \"semester\": \"\",\n  \"credit\": null,\n  \"bb_tc\": null,\n  \"prerequisite_subjects\": [],\n  \"query_target\": \"\",\n  \"total_credit\": false\n}\n\nKhông được thêm field khác.\n\n================================\nFIELD\n================================\n\nsubjects  \n→ danh sách môn học sinh viên nhắc tới trực tiếp.\n\nVí dụ:\n\"môn java\"\n\"cấu trúc dữ liệu\"\nOutput:\n\"subjects\": [\"java\"]\n\nNếu nhiều môn → giữ đúng thứ tự xuất hiện.\n\nVí dụ:\n\"java nâng cao và cấu trúc dữ liệu\"\n\nOutput:\n\"subjects\": [\"java nâng cao\",\"cấu trúc dữ liệu\"]\n---\nsemester  \n→ học kỳ sinh viên hỏi.\n\nCác dạng hợp lệ:\n\"học kỳ 3\"  \n\"hk3\"  \n\"hk 3\"  \n\"kỳ 3\"\n\nTất cả phải chuẩn hóa thành:\n\"semester\": \"hk3\"\nNếu không có → \"\"\n---\ncredit  \n→ số tín chỉ sinh viên nhắc tới.\n\nVí dụ:\n\"môn 3 tín chỉ\"\n\nOutput:\n\"credit\": 3\n\nQUAN TRỌNG:\nNếu sinh viên hỏi:\n\"java nâng cao mấy tín chỉ\"\n→ credit = null\nKhông được suy đoán số tín chỉ.\n---\nbb_tc  \n→ loại học phần.\nGiá trị hợp lệ:\n\"bb\" → bắt buộc  \n\"tc\" → tự chọn  \n\nVí dụ:\n\"môn bắt buộc\"\n→ \"bb\"\n\"môn tự chọn\"\n→ \"tc\"\nNếu không có → null\n---\nprerequisite_subjects  \n→ môn mà sinh viên muốn biết môn tiên quyết.\nVí dụ:\n\"môn tiên quyết của java nâng cao\"\n\nOutput:\n\"prerequisite_subjects\": [\"java nâng cao\"]\n\nQUY TẮC:\nNếu câu hỏi có dạng:\n\"môn tiên quyết của <môn>\"\n\nthì:\nsubjects = []\nprerequisite_subjects = [\"<môn>\"]\nNếu không có → []\n\n================================\nQUERY TARGET\n================================\n\nquery_target xác định loại truy vấn chính.\n\nGiá trị hợp lệ:\ncredit\nsemester\nprerequisite\nsubject_list\ninfo\ntotal_credit\n--------------------------------\ncredit\nSinh viên hỏi số tín chỉ của một môn.\n\nVí dụ:\n\"java nâng cao bao nhiêu tín chỉ\"\n\nOutput:\nquery_target = \"credit\"\n--------------------------------\nsemester\n\nSinh viên hỏi môn thuộc học kỳ nào.\nVí dụ:\n\"java nâng cao học kỳ mấy\"\n\nOutput:\nquery_target = \"semester\"\n--------------------------------\nprerequisite\n\nSinh viên hỏi môn tiên quyết.\nVí dụ:\n\"môn tiên quyết của java nâng cao\"\n\nOutput:\nquery_target = \"prerequisite\"\n--------------------------------\nsubject_list\n\nSinh viên hỏi danh sách môn học.\n\nCác dấu hiệu thường gặp:\n\n\"môn nào\"\n\"những môn nào\"\n\"các môn\"\n\"gồm môn nào\"\n\nVí dụ:\n\"các môn 3 tín chỉ là gì\"\n\nOutput:\nquery_target = \"subject_list\"\n--------------------------------\ninfo\n\nSinh viên muốn biết thông tin chung của một môn học.\nCác dấu hiệu thường gặp:\n\n\"thông tin môn <tên môn>\"\n\nVí dụ:\n\n\"thông tin môn java nâng cao\"\n\nOutput:\n\n{\n  \"subjects\": [\"java nâng cao\"],\n  \"semester\": \"\",\n  \"credit\": null,\n  \"bb_tc\": null,\n  \"prerequisite_subjects\": [],\n  \"query_target\": \"info\",\n  \"total_credit\": false\n}\nNếu câu hỏi chỉ nhắc đến một môn cụ thể\nvà sinh viên muốn biết thông tin của môn đó\n→ query_target = \"info\"\n\nKhông dùng subject_list trong trường hợp này.\n================================\nTOTAL CREDIT\n================================\n\ntotal_credit  \n→ sinh viên muốn biết TỔNG số tín chỉ.\n\nCác dạng thường gặp:\n\n\"tổng tín chỉ học kỳ 2\"\n\"tổng số tín chỉ hk3\"\n\"tổng tín chỉ chương trình\"\n\"tổng tín chỉ các môn tự chọn\"\n\nNếu sinh viên hỏi tổng tín chỉ\n\nquery_target = \"total_credit\"\ntotal_credit = true\n\nNếu không có → false\n================================\nQUY TẮC QUAN TRỌNG\n================================\n\nsemester, credit, bb_tc chỉ là điều kiện lọc.\n\nKHÔNG phải lúc nào cũng là query_target.\n\nVí dụ:\n\n\"môn tự chọn 3 tín chỉ học kỳ 4\"\n\nOutput:\n\n{\n  \"subjects\": [],\n  \"semester\": \"4\",\n  \"credit\": 3,\n  \"bb_tc\": \"tc\",\n  \"prerequisite_subjects\": [],\n  \"query_target\": \"subject_list\",\n  \"total_credit\": false\n}\n\n================================\nQUY TẮC BẮT BUỘC\n================================\n\n1. Không thêm field mới.\n2. Không suy đoán dữ liệu.\n3. Nếu không có thông tin → dùng giá trị mặc định.\n4. subjects phải giữ đúng thứ tự xuất hiện trong câu hỏi.\n5. Chỉ trả về JSON object duy nhất.\n6. Không được trả lời bằng văn bản, chỉ trả JSON.\n7. Bắt buộc phải trả về thông tin chứ không được không trả lời\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: model,\n      messages: [\n        {\n          role: \"system\",\n          content: systemPrompt\n        },\n        {\n          role: \"user\",\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        -1104
+      ],
+      "id": "7c193053-3fe1-4f4a-a883-e12e23c47966",
+      "name": "ctdt"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.body?.message) {\n    userMessage = item.json.body.message;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên.\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu.\nKHÔNG xác định intent.\nKHÔNG tư vấn.\nKHÔNG suy luận ngoài dữ liệu có trong câu hỏi.\n\n================================\nTHỨ TỰ THỰC HIỆN (BẮT BUỘC)\n================================\n1. Đọc toàn bộ câu hỏi\n2. Trích xuất TÊN MÔN HỌC hợp lệ (ưu tiên cao nhất)\n3. Trích xuất keywords\n4. Trích xuất time_keywords\n5. Trích xuất period_keywords\n6. Trích xuất credit\n7. Xác định bb_tc\n8. Sao chép rawQuestion (100% nguyên văn)\n\n================================\nTÊN MÔN HỌC\n================================\n\n- Là tên cụ thể của một môn học.\n- Có thể gồm nhiều từ.\n- Phải giữ nguyên cụm.\n- Không được tách nhỏ.\n\nVí dụ hợp lệ:\n\"anh văn\"\n\"anh văn 6\"\n\"toán cao cấp 2\"\n\"cấu trúc dữ liệu\"\n\"Lịch sử Đảng Cộng sản Việt Nam\"\n\nCác từ như:\n\"môn\", \"môn học\", \"học phần\", \"lớp\"\n→ KHÔNG được coi là tên môn học.\n\n--------------------------------\nMÔN CÓ SỐ THỨ TỰ\n--------------------------------\n\nNếu tên môn có dạng:\n<ten mon> + <số>\n\nVÀ số đó KHÔNG đi kèm:\n\"học kỳ\", \"hk\", \"khóa\", \"k\", \"tín chỉ\", \"tc\"\n\n→ coi số là một phần của tên môn.\n→ giữ nguyên toàn bộ cụm trong subject_keywords.\n→ không tách số ra.\n→ không đưa số vào keywords hay time_keywords.\n\n================================\nKEYWORDS\n================================\n\nChứa thông tin dùng để lọc:\n\n- Khóa Nếu phát hiện:\n  \"khóa <số>\"\n  \"k <số>\"\n  \"k<số>\"\n  → bắt buộc chuẩn hóa thành \"K<số>\" ví dụ khóa 28 ,k28 ,k 28 thì chuẩn hóa thành K28\n\n- Phân loại: bắt buộc, tự chọn, đại cương, chuyên ngành\n- Chương trình đào tạo\n\nNếu phát hiện khóa:\n→ bắt buộc đưa vào keywords.\n→ không đưa vào time_keywords.\n\n================================\nHỌC KỲ\n================================\n\nDạng hợp lệ:\n\"học kỳ <1-10>\"\n\"hk<1-10>\"\n\nNếu hợp lệ:\n→ đưa \"học kỳ <số>\" vào time_keywords.\n\nNếu số > 10:\n→ bỏ qua hoàn toàn.\n\n================================\nTIẾT HỌC\n================================\n\nNếu có cụm dạng:\n(1-3), (4-6), (7-9)...\n\n→ đưa vào period_keywords.\n→ không đưa vào time_keywords.\n\n================================\nPHÂN LOẠI BẮT BUỘC / TỰ CHỌN\n================================\n\nNếu trong câu hỏi có:\n- \"bắt buộc\", \"môn bắt buộc\", \"học bắt buộc\"\n→ bb_tc = \"bb\"\n\nNếu có:\n- \"tự chọn\", \"môn tự chọn\", \"học tự chọn\"\n→ bb_tc = \"tc\"\n\nNếu không nhắc tới:\n→ bb_tc = null\n\nKhông suy diễn nếu câu hỏi không nhắc rõ.\n\nrequired_keywords:\n- Chỉ dùng khi được hỏi về điều kiện tiên quyết.\n- Nếu câu hỏi có dạng:\n  \"môn A yêu cầu môn gì\"\n  \"điều kiện tiên quyết để học môn A là gì\"\n  \"Để học môn A cần học môn gì trước\"\n→ trích xuất tên môn trong phần đó.\n\n================================\nTÍN CHỈ (credit)\n================================\n\nChỉ coi là tín chỉ khi:\n\n- Có cụm đầy đủ: \"tín chỉ\"\n- Hoặc \"tc\" đứng sau một con số\n\nVí dụ hợp lệ:\n\"3 tín chỉ\"\n\"3 tc\"\n\"môn này 2 tín chỉ\"\n\nvà credit.value chỉ được gán khi tồn tại MỘT CON SỐ CỤ THỂ đứng ngay trước tín chỉ hoặc tc nhưng mang nghĩa tín chỉ:\nVí dụ hợp lệ:\n\"3 tín chỉ\" → value = 3\n\"2 tc\" → value = 2\nNếu câu hỏi chỉ có:\n\"bao nhiêu tín chỉ\"\n\"có bao nhiêu tín chỉ\"\n\"tổng bao nhiêu tín chỉ\"\n\nHOẶC không có con số cụ thể đứng trước \"tín chỉ\" hoặc \"tc\"\ncredit.value = null\n→ TUYỆT ĐỐI KHÔNG được gán 0\n→ TUYỆT ĐỐI KHÔNG được tự suy đoán số\n\nTrường hợp KHÔNG được coi là tín chỉ:\n\n- \"tự chọn\"\n- \"môn tự chọn\"\n- \"học tự chọn\"\n- \"tc\" xuất hiện như viết tắt của \"tự chọn\"\n\n--------------------------------\nQUY TẮC PHÂN BIỆT \"tc\"\n--------------------------------\n\nNếu \"tc\" xuất hiện:\n\n1. Nếu có số ngay trước nó → là tín chỉ.\n   Ví dụ: \"3 tc\" → credit.value = 3\n\n2. Nếu không có số đứng trước → không phải tín chỉ.\n   Ví dụ:\n   \"môn tc\"\n   \"học tc\"\n   → hiểu là \"tự chọn\", không liên quan credit.\n\n--------------------------------\nCREDIT SCOPE\n--------------------------------\n\nChỉ xác định scope khi credit.mentioned = true.\n\nsubject:\n- Có tên môn cụ thể.\n- Hỏi số tín chỉ của môn đó.\n\nsemester:\n- Có \"học kỳ <số>\" hoặc \"hk<số>\".\n\ncourse:\n- Hỏi tổng tín chỉ toàn khóa hoặc toàn CTDT.\n- Không có học kỳ cụ thể.\n\nfilter:\n- Dùng số tín chỉ để lọc môn.\n- Không phải câu hỏi tổng.\n\n--------------------------------\nQUY TẮC ƯU TIÊN\n--------------------------------\n\n1. Nếu có tên môn → subject\n2. Nếu không có môn nhưng có học kỳ → semester\n3. Nếu không có học kỳ nhưng hỏi tổng toàn khóa/CTDT → course\n4. Nếu chỉ dùng số để lọc → filter\n\nChỉ chọn đúng 1 scope.\n\n================================\nRAW QUESTION\n================================\n\nrawQuestion:\n- Sao chép 100% nguyên văn.\n- Không chỉnh sửa.\n- Không chuẩn hóa.\n- Không rút gọn.\n- Không để rỗng.\n\n================================\nOUTPUT\n================================\n\nChỉ trả về 1 JSON object duy nhất.\nKhông giải thích.\nKhông code block.\n\n{\n  \"keywords\": [],\n  \"subject_keywords\": [],\n  \"time_keywords\": [],\n  \"location_keywords\": [],\n  \"period_keywords\": [],\n  \"required_keywords\": [],\n  \"credit\": {\n    \"mentioned\": false,\n    \"value\": null,\n    \"scope\": null\n  },\n  \"bb_tc\": null,\n  \"rawQuestion\": \"\"\n}\n`\n;\n\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: $env.AI_MODEL1,\n      messages: [\n        {\n          role: 'system',\n          content: systemPrompt\n        },\n        {\n          role: 'user',\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1 // Giảm nhiệt độ để output ổn định hơn\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        -1824
+      ],
+      "id": "29f97adb-ea9e-4e4c-b33f-bd5d91d67cc9",
+      "name": "bb_tc"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nlet userMessage = '';\n// Lấy tin nhắn người dùng\nfor (const item of items) {\n  if (!userMessage && item.json?.body?.message) {\n    userMessage = item.json.body.message;\n  }\n}\nconst msgRaw = userMessage || '';\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI chuyên TRÍCH XUẤT dữ liệu từ câu hỏi sinh viên.\n\nNHIỆM VỤ:\nChỉ trích xuất dữ liệu.\nKHÔNG xác định intent.\nKHÔNG tư vấn.\nKHÔNG suy luận ngoài dữ liệu có trong câu hỏi.\n\n================================\nTHỨ TỰ THỰC HIỆN (BẮT BUỘC)\n================================\n1. Đọc toàn bộ câu hỏi\n2. Trích xuất TÊN MÔN HỌC hợp lệ (ưu tiên cao nhất)\n3. Trích xuất keywords\n4. Trích xuất time_keywords\n5. Trích xuất period_keywords\n6. Trích xuất credit\n7. Xác định bb_tc\n8. Sao chép rawQuestion (100% nguyên văn)\n\n================================\nTÊN MÔN HỌC\n================================\n\n- Là tên cụ thể của một môn học.\n- Có thể gồm nhiều từ.\n- Phải giữ nguyên cụm.\n- Không được tách nhỏ.\n\nVí dụ hợp lệ:\n\"anh văn\"\n\"anh văn 6\"\n\"toán cao cấp 2\"\n\"cấu trúc dữ liệu\"\n\"Lịch sử Đảng Cộng sản Việt Nam\"\n\nCác từ như:\n\"môn\", \"môn học\", \"học phần\", \"lớp\"\n→ KHÔNG được coi là tên môn học.\n\n--------------------------------\nMÔN CÓ SỐ THỨ TỰ\n--------------------------------\n\nNếu tên môn có dạng:\n<ten mon> + <số>\n\nVÀ số đó KHÔNG đi kèm:\n\"học kỳ\", \"hk\", \"khóa\", \"k\", \"tín chỉ\", \"tc\"\n\n→ coi số là một phần của tên môn.\n→ giữ nguyên toàn bộ cụm trong subject_keywords.\n→ không tách số ra.\n→ không đưa số vào keywords hay time_keywords.\n\n================================\nKEYWORDS\n================================\n\nChứa thông tin dùng để lọc:\n\n- Khóa Nếu phát hiện:\n  \"khóa <số>\"\n  \"k <số>\"\n  \"k<số>\"\n  → bắt buộc chuẩn hóa thành \"K<số>\" ví dụ khóa 28 ,k28 ,k 28 thì chuẩn hóa thành K28\n\n- Phân loại: bắt buộc, tự chọn, đại cương, chuyên ngành\n- Chương trình đào tạo\n\nNếu phát hiện khóa:\n→ bắt buộc đưa vào keywords.\n→ không đưa vào time_keywords.\n\n================================\nHỌC KỲ\n================================\n\nDạng hợp lệ:\n\"học kỳ <1-10>\"\n\"hk<1-10>\"\n\nNếu hợp lệ:\n→ đưa \"học kỳ <số>\" vào time_keywords.\n\nNếu số > 10:\n→ bỏ qua hoàn toàn.\n\n================================\nTIẾT HỌC\n================================\n\nNếu có cụm dạng:\n(1-3), (4-6), (7-9)...\n\n→ đưa vào period_keywords.\n→ không đưa vào time_keywords.\n\n================================\nPHÂN LOẠI BẮT BUỘC / TỰ CHỌN\n================================\n\nNếu trong câu hỏi có:\n- \"bắt buộc\", \"môn bắt buộc\", \"học bắt buộc\"\n→ bb_tc = \"bb\"\n\nNếu có:\n- \"tự chọn\", \"môn tự chọn\", \"học tự chọn\"\n→ bb_tc = \"tc\"\n\nNếu không nhắc tới:\n→ bb_tc = null\n\nKhông suy diễn nếu câu hỏi không nhắc rõ.\n\nrequired_keywords:\n- Chỉ dùng khi được hỏi về điều kiện tiên quyết.\n- Nếu câu hỏi có dạng:\n  \"môn A yêu cầu môn gì\"\n  \"điều kiện tiên quyết để học môn A là gì\"\n  \"Để học môn A cần học môn gì trước\"\n→ trích xuất tên môn trong phần đó.\n\n================================\nTÍN CHỈ (credit)\n================================\n\nChỉ coi là tín chỉ khi:\n\n- Có cụm đầy đủ: \"tín chỉ\"\n- Hoặc \"tc\" đứng sau một con số\n\nVí dụ hợp lệ:\n\"3 tín chỉ\"\n\"3 tc\"\n\"môn này 2 tín chỉ\"\n\nvà credit.value chỉ được gán khi tồn tại MỘT CON SỐ CỤ THỂ đứng ngay trước tín chỉ hoặc tc nhưng mang nghĩa tín chỉ:\nVí dụ hợp lệ:\n\"3 tín chỉ\" → value = 3\n\"2 tc\" → value = 2\nNếu câu hỏi chỉ có:\n\"bao nhiêu tín chỉ\"\n\"có bao nhiêu tín chỉ\"\n\"tổng bao nhiêu tín chỉ\"\n\nHOẶC không có con số cụ thể đứng trước \"tín chỉ\" hoặc \"tc\"\ncredit.value = null\n→ TUYỆT ĐỐI KHÔNG được gán 0\n→ TUYỆT ĐỐI KHÔNG được tự suy đoán số\n\nTrường hợp KHÔNG được coi là tín chỉ:\n\n- \"tự chọn\"\n- \"môn tự chọn\"\n- \"học tự chọn\"\n- \"tc\" xuất hiện như viết tắt của \"tự chọn\"\n\n--------------------------------\nQUY TẮC PHÂN BIỆT \"tc\"\n--------------------------------\n\nNếu \"tc\" xuất hiện:\n\n1. Nếu có số ngay trước nó → là tín chỉ.\n   Ví dụ: \"3 tc\" → credit.value = 3\n\n2. Nếu không có số đứng trước → không phải tín chỉ.\n   Ví dụ:\n   \"môn tc\"\n   \"học tc\"\n   → hiểu là \"tự chọn\", không liên quan credit.\n\n--------------------------------\nCREDIT SCOPE\n--------------------------------\n\nChỉ xác định scope khi credit.mentioned = true.\n\nsubject:\n- Có tên môn cụ thể.\n- Hỏi số tín chỉ của môn đó.\n\nsemester:\n- Có \"học kỳ <số>\" hoặc \"hk<số>\".\n\ncourse:\n- Hỏi tổng tín chỉ toàn khóa hoặc toàn CTDT.\n- Không có học kỳ cụ thể.\n\nfilter:\n- Dùng số tín chỉ để lọc môn.\n- Không phải câu hỏi tổng.\n\n--------------------------------\nQUY TẮC ƯU TIÊN\n--------------------------------\n\n1. Nếu có tên môn → subject\n2. Nếu không có môn nhưng có học kỳ → semester\n3. Nếu không có học kỳ nhưng hỏi tổng toàn khóa/CTDT → course\n4. Nếu chỉ dùng số để lọc → filter\n\nChỉ chọn đúng 1 scope.\n\n================================\nRAW QUESTION\n================================\n\nrawQuestion:\n- Sao chép 100% nguyên văn.\n- Không chỉnh sửa.\n- Không chuẩn hóa.\n- Không rút gọn.\n- Không để rỗng.\n\n================================\nOUTPUT\n================================\n\nChỉ trả về 1 JSON object duy nhất.\nKhông giải thích.\nKhông code block.\n\n{\n  \"keywords\": [],\n  \"subject_keywords\": [],\n  \"time_keywords\": [],\n  \"location_keywords\": [],\n  \"period_keywords\": [],\n  \"required_keywords\": [],\n  \"credit\": {\n    \"mentioned\": false,\n    \"value\": null,\n    \"scope\": null\n  },\n  \"bb_tc\": null,\n  \"rawQuestion\": \"\"\n}\n`\n;\n\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: $env.AI_MODEL1,\n      messages: [\n        {\n          role: 'system',\n          content: systemPrompt\n        },\n        {\n          role: 'user',\n          content: msgRaw\n        }\n      ],\n      temperature: 0.1 // Giảm nhiệt độ để output ổn định hơn\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        -2032
+      ],
+      "id": "2405069d-5ff8-443b-b875-9588055c150e",
+      "name": "graduate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3200,
+        -768
+      ],
+      "id": "245db84a-4c95-46b6-b842-6adb916c4730",
+      "name": "aiKeyword13",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3216,
+        -1104
+      ],
+      "id": "7db3bdef-eaa4-4f06-88b7-805cd73ae6d0",
+      "name": "aiKeyword11",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3200,
+        -1824
+      ],
+      "id": "9532d757-a2c9-4970-a242-a1d15ec99584",
+      "name": "aiKeyword9",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fe5d9f9e-a405-44ea-bd53-ebd4308063ce",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "advice_ctdt",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2416,
+        -1392
+      ],
+      "id": "d9ccef3f-4363-4423-9b98-2a1b382ce1a1",
+      "name": "If5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6d5c072f-dff1-4103-8d80-f606859528d8",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "bb_tc",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2160,
+        -1504
+      ],
+      "id": "11c78c50-043b-4d47-a098-0a3120ec8ca3",
+      "name": "If4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3200,
+        -288
+      ],
+      "id": "0e8c0d57-c2a3-43f6-a1d0-431cc383fe04",
+      "name": "aiKeyword6",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c5b41bd5-75a3-457e-a298-7d5773157726",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "unknown",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2576,
+        -352
+      ],
+      "id": "49d668ef-6204-4d79-9336-770e2ca1031d",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f011d542-f88c-48b7-9e86-ca66b94c1392",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "graduate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1952,
+        -1600
+      ],
+      "id": "5d33d3a0-6096-4ecc-8b14-6dde7733c6c4",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a9fd290a-41e5-42c5-bb1d-25e457044913",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "ctdt",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "86632d94-ea91-46fe-8c2d-ec72cb474999",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "graduate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "5f6b9d9c-b469-4050-9dbd-5e5bdfcb055d",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "both",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "01dbfcb3-7ce9-4191-bdca-8901c21bacb1",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "advice_ctdt",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "36485de2-d21e-4dc8-b58b-b31bcfbd3c85",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "bb_tc",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        -1456
+      ],
+      "id": "cb681c70-7369-4aa4-88da-8d4fc4cefca4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\nChức năng:\n- Chuẩn hóa toàn bộ dữ liệu sau khi đã merge AI 1 và AI 2.\n- Đảm bảo mọi field trả ra đúng kiểu dữ liệu và đúng format hệ thống.\n- Tạo một cấu trúc output ổn định cho các node xử lý phía sau.\n\n1. INPUT  \n   Lấy dữ liệu đã merge (extraction + intent).  \n   Nếu không có input thì dừng workflow và trả lỗi.\n\n2. HELPERS  \n   Các hàm hỗ trợ để chuẩn hóa dữ liệu:\n\n   - toArray  \n     Đảm bảo mọi field dạng mảng luôn là mảng hợp lệ.  \n     Nếu không phải mảng → trả về mảng rỗng.  \n     Loại bỏ giá trị rỗng và trim khoảng trắng.\n\n   - normalizeTime  \n     Gộp time_keywords và keywords để dò:\n       + Học kỳ (HK1 → HK12)\n       + Khóa (Kxx)  \n     Chuẩn hóa tất cả về format:\n       HK{number}\n       K{number}\n     Loại bỏ trùng bằng Set.\n\n   - normalizeCredit  \n     Đảm bảo credit luôn có cấu trúc chuẩn:\n       {\n         mentioned: boolean,\n         value: number | null,\n         scope: hợp lệ | null\n       }\n     Ép kiểu value sang number nếu có thể.\n     Chỉ chấp nhận scope thuộc tập cho phép.\n\n3. NORMALIZE  \n   Chuẩn hóa từng field:\n   - keywords\n   - subject_keywords\n   - location_keywords\n   - period_keywords\n   - required_keywords\n   - time_keywords (qua normalizeTime)\n   - credit (qua normalizeCredit)\n\n   Đảm bảo tất cả field đều đúng kiểu trước khi đưa vào hệ thống.\n\n4. OUTPUT  \n   Trả về cấu trúc chuẩn hệ thống:\n\n   {\n     success: true,\n     data: {\n       keywords,\n       subject_keywords,\n       intent,\n       time_keywords,\n       location_keywords,\n       period_keywords,\n       required_keywords,\n       credit,\n       confidence\n     },\n     raw_question\n   }\n\n   intent mặc định là \"unknown\" nếu không tồn tại.  \n   confidence mặc định là 0 nếu không tồn tại.  \n\nMục tiêu chính:\n- Chặn lỗi do model thay đổi format.\n- Cố định schema trước khi vào tầng filter logic.\n*/\n\n// =======================================\n// NORMALIZE FINAL (SAU MERGE AI1 + AI2)\n// =======================================\n\n\nconst major = $('configAI').first().json.major;\nconst course = $('configAI').first().json.course;\nif (!items.length) {\n  return [{ json: { success: false, error: \"No input\" } }];\n}\n\nconst input = items[0].json\nlet parsed = {};\ntry {\n  const content = input.choices?.[0]?.message?.content || \"{}\";\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = {};\n}\n// =======================================\n// OUTPUT CHUẨN HỆ THỐNG\n// =======================================\n\nreturn [{\n  json: {\n    major: major,\n    course: course,\n    intent: parsed.intent || \"unknown\",\n    rawquestion: parsed.rawquestion ?? null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        -1456
+      ],
+      "id": "074021f7-016e-4b48-b04a-fdea0f0e2c44",
+      "name": "NormalizeAi"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\n\nif (!items.length) {\n  return [{ json: { error: \"No input from AI 1\" } }];\n}\n\n// Lấy content gốc từ AI 1\nconst ai1Content =\n  items[0]?.json?.choices?.[0]?.message?.content || null;\n\nif (!ai1Content) {\n  return [{\n    json: {\n      error: \"Cannot find AI 1 content\",\n      debug: items[0].json\n    }\n  }];\n}\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI xác định INTENT dựa trên dữ liệu đã được trích xuất.\n\nBạn sẽ nhận 1 JSON object chứa:\n- keywords\n- subject_keywords\n- time_keywords\n- location_keywords\n- period_keywords\n- required_keywords\n- credit\n- bb_tc\n- rawQuestion\n\nBạn KHÔNG được thay đổi bất kỳ dữ liệu nào.\nBạn CHỈ được xác định intent.\n\n========================================\nNGUYÊN TẮC BẮT BUỘC\n========================================\n\n1. Chỉ dựa vào rawQuestion và dữ liệu đã trích xuất.\n2. Không suy đoán ngoài nội dung câu hỏi.\n3. Không được làm mất hoặc thay đổi subject_keywords.\n4. Phải tuân thủ đúng THỨ TỰ ƯU TIÊN intent.\n5. Nếu có xung đột → chọn intent có ưu tiên cao hơn.\n\n========================================\nTHỨ TỰ ƯU TIÊN (CAO → THẤP)\n========================================\n\n1. graduate\n2. bb_tc\n3. both\n4. mh\n5. advice_ctdt\n6. ctdt\n7. unknown\n\n========================================\nĐỊNH NGHĨA CỤ THỂ TỪNG INTENT\n========================================\n\n------------------------------------------------\nINTENT: graduate (ƯU TIÊN CAO NHẤT)\n------------------------------------------------\n\nDùng khi câu hỏi liên quan đến:\n- xét tốt nghiệp\n- điều kiện tốt nghiệp\n- đủ điều kiện ra trường\n- còn thiếu gì để tốt nghiệp\n- đủ tín chỉ ra trường\n- bao giờ ra trường\n- kiểm tra tốt nghiệp\n\nChỉ cần có nội dung liên quan tốt nghiệp/ra trường\n→ BẮT BUỘC chọn graduate.\n\n------------------------------------------------\nINTENT: bb_tc\n------------------------------------------------\n\nDùng khi câu hỏi liên quan đến PHÂN LOẠI\n\"BẮT BUỘC\" hoặc \"TỰ CHỌN\"\n\nĐIỀU KIỆN BẮT BUỘC:\n\n- Câu hỏi PHẢI chứa rõ ràng ít nhất một trong các ý:\n  - bắt buộc\n  - tự chọn\n  - bb / tc\n  - phân loại theo bắt buộc / tự chọn\n\n- Nếu câu hỏi CHỈ hỏi:\n  \"Có những môn nào trong học kỳ X\"\n  → KHÔNG được chọn bb_tc\n\nBao gồm các dạng:\n\n1) Liệt kê:\n- học kỳ 5 có môn nào là môn bắt buộc\n- khóa 28 có môn tự chọn nào\n- các môn bb của hk6 là gì\n\n2) Đếm số lượng:\n- học kỳ 5 có bao nhiêu môn bb\n- khóa 28 có bao nhiêu môn tc\n\n3) Tổng tín chỉ:\n- số tín chỉ các môn tc là bao nhiêu\n- tổng tín chỉ môn bb của hk5\n\n4) Kiểm tra một môn cụ thể:\n- môn cấu trúc dữ liệu có phải môn bắt buộc không\n- anh văn 6 có phải tự chọn không\n\nQUY TẮC:\n- Nếu mục đích là phân loại / đếm / tổng hợp theo bb/tc\n  → intent PHẢI là bb_tc\n- intent bb_tc có thể tồn tại dù subject_keywords rỗng\n- intent bb_tc có thể tồn tại cùng time_keywords hoặc keywords (khóa)\n- \n------------------------------------------------\nINTENT: both\n------------------------------------------------\n\nDùng khi trong CÙNG câu có:\n\nA. Trigger LỊCH HỌC (mh)\nVÀ\nB. Trigger HỌC THUẬT (ctdt)\n\nTrigger mh:\n- học thứ mấy\n- thứ mấy học\n- học ngày nào\n- ngày nào học\n- học lúc mấy giờ\n- giờ học\n- phòng học\n- học ở đâu\n- lịch học\n\nTrigger ctdt:\n- bao nhiêu tín chỉ\n- môn này mấy tín chỉ\n- thuộc học kỳ nào\n- điều kiện tiên quyết\n- môn bắt buộc hay tự chọn\n- học kỳ mấy\n\nNếu có cả hai nhóm trigger\n→ BẮT BUỘC chọn both.\n\n------------------------------------------------\nINTENT: mh\n------------------------------------------------\n\nDùng khi câu hỏi CHỈ hỏi về:\n\n- lịch học\n- phòng học\n- giờ học\n- ngày học\n- học thứ mấy\n\nVà KHÔNG có yêu cầu học thuật khác.\n\n------------------------------------------------\nINTENT: advice_ctdt\n------------------------------------------------\n\nDùng khi câu hỏi mang tính:\n- tư vấn\n- lựa chọn\n- so sánh\n- quyết định học môn nào\n\nHoặc:\n\nCó BỐI CẢNH HỌC TẬP (ví dụ đã học, đang học, hk, khóa)\nVÀ có ý định học tiếp / lộ trình.\n\nTrigger ví dụ:\n- nên học môn nào\n- có nên học\n- học tiếp môn gì\n- tiếp theo nên học gì\n- lộ trình học\n\n------------------------------------------------\nINTENT: ctdt\n------------------------------------------------\n\nDùng khi hỏi thông tin học thuật chung về môn học:\n\n- môn bao nhiêu tín chỉ\n- môn thuộc học kỳ nào\n- môn này là gì\n- điều kiện học trước\n- Liệt kê các môn học trong một học kỳ\n  (ví dụ: học kỳ 1 có các môn gì)\n- môn bắt buộc hay tự chọn (không phải dạng liệt kê / đếm theo bb/tc)\n\n------------------------------------------------\nINTENT: unknown\n------------------------------------------------\n\nChỉ dùng khi không xác định được rõ ràng intent.\n\n========================================\nQUY TẮC BẮT BUỘC CUỐI CÙNG\n========================================\n\n- graduate luôn override tất cả.\n- bb_tc override both, mh, advice_ctdt, ctdt.\n- both override mh và ctdt.\n- Nếu có bối cảnh học tập nhưng không rõ ràng → advice_ctdt.\n- Không được suy đoán ngoài câu hỏi.\n\n========================================\nOUTPUT\n========================================\n\nChỉ trả về duy nhất 1 JSON:\n\n{\n  \"intent\": \"\",\n  \"confidence\": 0.95\n}\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [{\n  json: {\n    model: $env.AI_MODEL1,\n    messages: [\n      {\n        role: \"system\",\n        content: systemPrompt\n      },\n      {\n        role: \"user\",\n        content: ai1Content\n      }\n    ],\n    temperature: 0.1\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -2880
+      ],
+      "id": "0259c895-97d7-42be-887b-f87821ce7d82",
+      "name": "Code in JavaScript12"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        -1456
+      ],
+      "id": "7403cf87-fc6b-461e-8f14-49f38256d6fa",
+      "name": "aiKeyword7",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://localhost"
+            },
+            {
+              "name": "X-Title",
+              "value": "n8n-chat"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3200,
+        -2032
+      ],
+      "id": "c8d6db9b-503f-41b0-a960-5c36acc642f5",
+      "name": "aiKeyword5",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        560,
+        -1456
+      ],
+      "id": "7773abf9-1084-447e-bf90-90f6b0f105aa",
+      "name": "Webhook1",
+      "webhookId": "7013a6a2-9ae5-44d5-9d26-e40e42da9942"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4096,
+        -1840
+      ],
+      "id": "b041658a-192f-418b-bac8-8a5aa593d797",
+      "name": "Merge7"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "srL4d3lQy5f8UCV1",
+          "mode": "list",
+          "cachedResultName": "sheet_cache",
+          "cachedResultUrl": "/projects/vBeG3fbFFxc8Ej4R/datatables/srL4d3lQy5f8UCV1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "ctdt_cache"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        3872,
+        -1920
+      ],
+      "id": "7d014734-a731-4b93-ab13-f9a713dfb44e",
+      "name": "Get row(s) CTDT4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3696,
+        -1920
+      ],
+      "id": "5f650c72-e310-453c-a0f6-37581816ec09",
+      "name": "none6"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5344,
+        -1840
+      ],
+      "id": "0103716a-19a2-4ba2-bec1-fdbf1bfd3f77",
+      "name": "inputAIBBTC"
+    },
+    {
+      "parameters": {
+        "jsCode": "const semester = $('Config').first().json.config.semester;\nconst school = $('Config').first().json.config.school;\n\nreturn [\n  {\n    json: {\n      message: \"AI Node 1 đọc config\",\n      semester: semester,\n      school: school\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -3072
+      ],
+      "id": "06e92dab-2b01-4af3-bbfe-a961834642c6",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      config: {\n        semester: \"2025-2\",\n        ai_prompt_version: \"v3\",\n        school: \"ABC University\"\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -3072
+      ],
+      "id": "bd238f74-2ecb-4f9d-9622-d51e2e64e46b",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "const promptVersion = $('Config').first().json.config.ai_prompt_version;\n\nreturn [\n  {\n    json: {\n      message: \"AI Node 2 dùng prompt version\",\n      version: promptVersion\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -3072
+      ],
+      "id": "de711a8e-6c67-47b9-9a6e-6fc7393e29c9",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      hasKey: !!$env.GROQ_API_KEY,\n      model: $env.AI_MODEL,\n      model1: $env.AI_MODEL1\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -3072
+      ],
+      "id": "7de6b048-06b8-47a6-a1d2-f68dc224f53b",
+      "name": "TEST Key"
+    },
+    {
+      "parameters": {
+        "content": "[\n  {\n    \"headers\": {\n      \"accept\": \"application/json, application/*+json\",\n      \"content-type\": \"application/json\",\n      \"user-agent\": \"Java/25.0.1\",\n      \"host\": \"localhost:5678\",\n      \"connection\": \"keep-alive\",\n      \"transfer-encoding\": \"chunked\"\n    },\n    \"params\": {},\n    \"query\": {},\n    \"body\": {\n      \"major\": \"Công nghệ phần mềm\",\n      \"course\": \"K28\",\n      \"message\": \"x\"\n    },\n    \"webhookUrl\": \"http://localhost:5678/webhook/test\",\n    \"executionMode\": \"production\"\n  }\n]",
+        "height": 512
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -2240
+      ],
+      "id": "1f013e99-a484-42ba-8aa7-2a4d0c1de146",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## MH\nCho tôi xem các lớp môn Lập trình Java"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        -1952
+      ],
+      "id": "6fb497b5-24c9-40de-a7ec-666ba2cbe107",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "{{ ($json.ai_content ?? '') + ($json.LH ?? '') }}\n"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        7552,
+        -2224
+      ],
+      "id": "222cfda2-8f54-4627-99e9-68e8c2b3f1ea",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nconst model = $('configAI').first().json.model;\nlet userMessage = \"\";\n\nfor (const item of items) {\n  if (!userMessage && item.json?.message) {\n    userMessage = item.json.message;\n  }\n}\n\nuserMessage = (userMessage || \"\").trim();\n\nif (!userMessage) {\n  return [{\n    json: {\n      error: \"User message not found\"\n    }\n  }];\n}\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI xác định INTENT cho chatbot học vụ đại học.\n\nNhiệm vụ của bạn:\nPhân loại câu hỏi của sinh viên vào đúng intent.\n\nBạn CHỈ được trả về intent.\nKHÔNG được giải thích.\n\n========================================\nINTENT CÓ THỂ TRẢ VỀ\n========================================\n\ngraduate\nbb_tc\nboth\nmh\nadvice_ctdt\nctdt\nunknown\n\n========================================\nTHỨ TỰ ƯU TIÊN (CAO → THẤP)\n========================================\n\n1. graduate\n2. bb_tc\n3. both\n4. mh\n5. advice_ctdt\n6. ctdt\n7. unknown\n\nNếu có xung đột intent\n→ luôn chọn intent có ưu tiên cao hơn.\n\n========================================\nĐỊNH NGHĨA INTENT\n========================================\n\n------------------------------------------------\ngraduate\n------------------------------------------------\n\nCâu hỏi liên quan:\n\n- tốt nghiệp\n- ra trường\n- xét tốt nghiệp\n- điều kiện tốt nghiệp\n- đủ tín chỉ ra trường\n- còn thiếu gì để tốt nghiệp\n- bao giờ tốt nghiệp\n\nChỉ cần câu hỏi nhắc tới tốt nghiệp hoặc ra trường\n→ intent phải là graduate.\n\ngraduate override tất cả intent khác.\n\nNếu câu hỏi chứa:\n- tốt nghiệp\n- ra trường\n\n→ luôn chọn graduate\nkể cả khi có từ:\nbắt buộc, tự chọn.\n------------------------------------------------\nbb_tc\n------------------------------------------------\n\nCâu hỏi liên quan phân loại môn học:\n\n- môn bắt buộc\n- môn tự chọn\n- bb\n- tc\n\nVí dụ:\n\n- môn này là bắt buộc hay tự chọn\n- học kỳ 5 có môn bắt buộc nào\n- có bao nhiêu môn tự chọn\n- khóa 28 có môn tự chọn nào\n\nNếu mục đích chính là phân loại môn\n→ intent = bb_tc.\n\nNếu câu hỏi yêu cầu xác định\nmột môn học là bắt buộc hay tự chọn\n→ intent bắt buộc là bb_tc.\n------------------------------------------------\nboth\n------------------------------------------------\n\nCâu hỏi chứa đồng thời:\n\nA. thông tin lịch học\nB. thông tin học thuật\n\nTrigger lịch học:\n\n- học thứ mấy\n- học ngày nào\n- lịch học\n- học lúc mấy giờ\n- phòng học\n- học ở đâu\n\nTrigger học thuật:\n\n- bao nhiêu tín chỉ\n- học kỳ mấy\n- môn này mấy tín chỉ\n- môn này thuộc học kỳ nào\n- tiên quyết là gì\n\nNếu câu hỏi chứa cả hai nhóm thông tin\n→ intent = both.\n\nVí dụ:\n\n\"môn cấu trúc dữ liệu có bao nhiêu tín chỉ và học thứ mấy\"\n\nNếu câu hỏi chỉ chứa các thông tin lịch học\n(dù có nhiều loại như thứ, phòng, giờ)\n→ là mh, không phải both.\n\nNếu câu hỏi chỉ chứa thông tin học thuật\n(tín chỉ, học kỳ, tiên quyết)\n→ intent = ctdt\nkhông phải both.\n------------------------------------------------\nmh\n------------------------------------------------\n\nCâu hỏi chỉ liên quan lịch học:\n\n- học thứ mấy\n- lịch học\n- học lúc mấy giờ\n- phòng học\n- học ở đâu\n\nVà KHÔNG bao gồm trong câu hỏi:\n\n- tín chỉ\n- học kỳ\n- tiên quyết\n\n------------------------------------------------\nadvice_ctdt\n------------------------------------------------\n\nCâu hỏi mang tính tư vấn học tập:\n\n- nên học môn nào\n- nên học gì trước\n- học tiếp môn gì\n- gợi ý môn học\n- lộ trình học\n- có nên học môn này không\n\n------------------------------------------------\nctdt\n------------------------------------------------\n\nCâu hỏi thông tin học thuật:\n\n- môn bao nhiêu tín chỉ\n- môn thuộc học kỳ mấy\n- điều kiện tiên quyết của môn là gì\n- danh sách môn học\n- học kỳ có môn gì\n\n------------------------------------------------\nunknown\n------------------------------------------------\n\nChỉ dùng khi không xác định được intent.\n\n========================================\nQUY TRÌNH XÁC ĐỊNH INTENT\n========================================\n\nBước 1  \nNếu câu hỏi liên quan tốt nghiệp → graduate.\n\nBước 2  \nNếu mục đích là phân loại môn bắt buộc / tự chọn → bb_tc.\n\nBước 3  \nNếu câu hỏi chứa cả thông tin lịch học và học thuật → both.\n\nBước 4  \nNếu chỉ hỏi lịch học → mh.\n\nBước 5  \nNếu câu hỏi mang tính tư vấn → advice_ctdt.\n\nBước 6  \nNếu hỏi thông tin học thuật → ctdt.\n\nBước 7  \nNếu không xác định được → unknown.\n\nRULE QUAN TRỌNG:\n\nboth chỉ được chọn khi câu hỏi\nđồng thời chứa:\n\n1 thông tin lịch học\nvà\n1 thông tin học thuật.\n\nNếu không có cả hai loại\n→ không được chọn both.\n \nBước 8 sau khi xác định intent xong hãy ghi lại câu hỏi ban đầu của người dùng vào rawquestion\n========================================\nOUTPUT\n========================================\n\nChỉ trả về JSON:\n\n{\n  \"intent\": \"\",\n  \"rawquestion\": \"\",\n  \"confidence\": 0.95\n}\n\nKhông viết thêm bất kỳ nội dung nào.\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [{\n  json: {\n    model: model,\n    messages: [\n      {\n        role: \"system\",\n        content: systemPrompt\n      },\n      {\n        role: \"user\",\n        content: userMessage\n      }\n    ],\n    temperature: 0.1\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -1456
+      ],
+      "id": "f0f092cc-c385-4fc7-8c91-2270c7ed5d7c",
+      "name": "aiInput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// --------------------\n// NORMALIZE TEXT\n// --------------------\nfunction normalizeText(str = \"\") {\n  return String(str)\n    .toLowerCase()\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")\n    .trim();\n}\n\n// --------------------\n// NORMALIZE MAJOR\n// --------------------\nfunction normalizeMajor(major = \"\") {\n\n  const m = normalizeText(major);\n\n  if (m.includes(\"cnpm\") || m.includes(\"phan mem\"))\n    return \"Chuyên ngành CNPM\";\n\n  if (m.includes(\"cndl\") || m.includes(\"du lieu\"))\n    return \"Chuyên ngành CNDL\";\n\n  if (m.includes(\"ai\") || m.includes(\"tri tue\"))\n    return \"Chuyên ngành Trí tuệ Nhân tạo\";\n\n  return major || null;\n}\n\n// --------------------\n// MAIN\n// --------------------\nreturn items.map(item => {\n\n  const body = item.json.body || {};\n\n  const majorRaw = body.major || null;\n  const major = normalizeMajor(majorRaw);\n\n  const course = body.course || null;\n  const message = body.message || null;\n\n  return {\n    json: {\n      major: major,\n      course: course,\n      message: message,\n      model: \"openai/gpt-oss-20b\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        -1456
+      ],
+      "id": "5e5a21bb-9d12-4709-b0c8-4cb37af0277e",
+      "name": "configAI"
+    },
+    {
+      "parameters": {
+        "jsCode": "====================================================\nSCHEMA OUTPUT CHO CÁC INTENT CHATBOT\n====================================================\n\n1. INTENT: mh (lịch học)\n\nDùng khi hỏi:\n- học thứ mấy\n- giờ học\n- phòng học\n- lịch học\n\nOutput:\n\n{\n  \"subjects\": [\n    {\n      \"subject\": \"\",\n      \"subject_code\": \"\",\n      \"class\": \"\",\n      \"day\": \"\",\n      \"period\": \"\",\n      \"room\": \"\"\n    }\n  ]\n}\n\nField:\nsubject        : tên môn\nsubject_code   : mã môn (key chính)\nclass          : mã lớp\nday            : thứ học\nperiod         : tiết học\nroom           : phòng học\n\n\n\n----------------------------------------------------\n\n2. INTENT: ctdt (chương trình đào tạo)\n\nDùng khi hỏi:\n- tín chỉ\n- học kỳ\n- môn tiên quyết\n- thông tin môn học\n\nOutput:\n\n{\n  \"subjects\": [\n    {\n      \"subject\": \"\",\n      \"subject_code\": \"\",\n      \"credit\": \"\",\n      \"semester\": \"\",\n      \"prerequisite\": [],\n      \"type\": \"\"\n    }\n  ]\n}\n\nField:\nsubject        : tên môn\nsubject_code   : mã môn\ncredit         : số tín chỉ\nsemester       : học kỳ\nprerequisite   : danh sách môn tiên quyết\ntype           : bb / tc\n\n\n\n----------------------------------------------------\n\n3. INTENT: bb_tc (môn bắt buộc / tự chọn)\n\nThực chất là subset của ctdt.\n\nOutput:\n\n{\n  \"subjects\": [\n    {\n      \"subject\": \"\",\n      \"subject_code\": \"\",\n      \"type\": \"\"\n    }\n  ],\n  \"meta\": {\n    \"category\": \"\"\n  }\n}\n\nField:\nsubject        : tên môn\nsubject_code   : mã môn\ntype           : bb / tc\nmeta.category  : loại truy vấn (bb hoặc tc)\n\n\n\n----------------------------------------------------\n\n4. INTENT: both (lịch học + thông tin môn)\n\nDùng khi câu hỏi chứa cả:\n- lịch học\n- thông tin học thuật\n\nVí dụ:\n\"môn cấu trúc dữ liệu có bao nhiêu tín chỉ và học thứ mấy\"\n\nOutput:\n\n{\n  \"subjects\": [\n    {\n      \"subject\": \"\",\n      \"subject_code\": \"\",\n      \"class\": \"\",\n      \"credit\": \"\",\n      \"semester\": \"\",\n      \"prerequisite\": [],\n      \"type\": \"\",\n      \"day\": \"\",\n      \"period\": \"\",\n      \"room\": \"\"\n    }\n  ]\n}\n\n\n\n----------------------------------------------------\n\n5. INTENT: graduate (tốt nghiệp)\n\nThiết kế:\n- trả lời câu hỏi chính\n- đồng thời hiển thị thêm thông tin hữu ích\n\nOutput:\n\n{\n  \"graduate\": {\n    \"required_credit\": \"\",\n    \"completed_credit\": \"\",\n    \"remaining_credit\": \"\",\n    \"missing_subjects\": [\n      {\n        \"subject\": \"\",\n        \"subject_code\": \"\",\n        \"credit\": \"\"\n      }\n    ]\n  }\n}\n\nField:\nrequired_credit   : tổng tín chỉ cần\ncompleted_credit  : tín chỉ đã hoàn thành\nremaining_credit  : tín chỉ còn thiếu\nmissing_subjects  : danh sách môn còn thiếu\n\n\n\n----------------------------------------------------\n\n6. INTENT: advice_ctdt (tư vấn học)\n\nDùng khi:\n- gợi ý môn học\n- tư vấn học kỳ tiếp theo\n\nOutput:\n\n{\n  \"context\": {\n    \"semester\": \"\",\n    \"completed_subjects\": [\n      {\n        \"subject_code\": \"\"\n      }\n    ]\n  },\n  \"suggested_subjects\": [\n    {\n      \"subject\": \"\",\n      \"subject_code\": \"\",\n      \"credit\": \"\",\n      \"semester\": \"\",\n      \"prerequisite\": [],\n      \"type\": \"\"\n    }\n  ]\n}\n\n\n\n----------------------------------------------------\n\n7. INTENT: unknown\n\nOutput:\n\n{\n  \"intent\": \"unknown\",\n  \"message\": \"Không xác định được câu hỏi\"\n}\n\n\n\n====================================================\nSUBJECT MASTER SCHEMA (schema lớn nhất)\n====================================================\n\n{\n  \"subject\": \"\",\n  \"subject_code\": \"\",\n  \"class\": \"\",\n  \"credit\": \"\",\n  \"semester\": \"\",\n  \"prerequisite\": [],\n  \"type\": \"\",\n  \"day\": \"\",\n  \"period\": \"\",\n  \"room\": \"\"\n}\n\nMapping:\n\nmh          -> subject, subject_code, class, day, period, room\nctdt        -> subject, subject_code, credit, semester, prerequisite, type\nbb_tc       -> subject, subject_code, type\nboth        -> tất cả\ngraduate    -> graduate object\nadvice_ctdt -> context + suggested_subjects\n\n====================================================\nWORKFLOW LOGIC\n====================================================\n\nintent detect\n      ↓\nquery database / table\n      ↓\nbuild output JSON theo schema\n      ↓\nAI final response\n\n===================================================="
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -2880
+      ],
+      "id": "5afa8b33-5d29-478d-a6c3-cbbc7b026dec",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return{\n  ai_content: \"AI không hiểu được ý bạn vui lòng cung cấp thông tin rõ hơn\"\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        176
+      ],
+      "id": "8f42c49d-43de-4481-9fbd-a8fa589bdf8e",
+      "name": "unknown"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ======================\n// INPUT\n// ======================\nconst items = $input.all();\nconst model = $('configAI').first().json.model;\nconst major = $('configAI').first().json.major;\nconst course = $('configAI').first().json.course;\nconst rawquestion = $('NormalizeAi').first().json.rawquestion;\n\n// dữ liệu đã filter\nconst data = items[0].json;\n\n// ======================\n// SYSTEM PROMPT\n// ======================\nconst systemPrompt = `\nBạn là AI hỗ trợ trả lời câu hỏi lịch học cho sinh viên.\n\n================================\nTHÔNG TIN SINH VIÊN\n================================\n\nSinh viên thuộc:\n\nkhóa: ${course}\n${major ? `chuyên ngành: ${major}` : \"\"}\n\nLuôn bắt đầu câu trả lời bằng thông tin trên.\n\n================================\nDỮ LIỆU ĐẦU VÀO\n================================\n\nBạn sẽ nhận dữ liệu JSON gồm:\n\nsubjects\ntotalMatched\n\nsubjects là danh sách môn học sinh viên đang tìm.\n\nMỗi môn có cấu trúc:\n\n{\n\"name\": \"\",\n\"day\": \"\",\n\"period\": \"\",\n\"class\": \"\",\n\"room\": \"\"\n}\n\ntotalMatched là số lớp phù hợp tìm được.\ndữ liều đầu vào:\n\nsubjects:\n${JSON.stringify(data.subjects, null, 2)}\n\ntotalMatched:\n${data.totalMatched}\n================================\nCÁCH TRẢ LỜI\n================================\n\nĐầu tiên xác nhận thông tin sinh viên đang tìm.\n\nVới mỗi môn trong subjects:\n\nNếu field KHÔNG rỗng thì hiển thị.\n\nQuy tắc hiển thị:\n\nname → môn\nclass → mã lớp\nday → thứ\nperiod → tiết học\nroom → phòng học\n\nVí dụ format:\n\nHiện bạn muốn tìm môn: <name>\n(nếu có class và không rỗng hoặc null) có mã lớp: <class>\n(nếu có day và không rỗng hoặc null) học vào: <day>\n(nếu có period và không rỗng hoặc null) vào tiết: <period>\n(nếu có room và không rỗng hoặc null) tại phòng: <room>\n\nNếu có nhiều môn → mỗi môn hiển thị một đoạn riêng.\n\n================================\nSỐ LỚP PHÙ HỢP\n================================\n\nSau khi liệt kê các môn, hiển thị:\n\n\"Số lớp phù hợp tìm được: <totalMatched>\"\n\n================================\nQUY TẮC\n================================\n\n1. Không được tự tạo dữ liệu mới.\n2. Chỉ sử dụng dữ liệu có trong JSON input.\n3. Chỉ hiển thị field không rỗng.\n4. Nếu có nhiều môn → liệt kê lần lượt.\n5. Không hiển thị JSON trong câu trả lời.\n6. Chỉ trả về nội dung trả lời dạng văn bản.\n`;\n\n// ======================\n// OUTPUT\n// ======================\nreturn [\n  {\n    json: {\n      model: model,\n      messages: [\n        {\n          role: \"system\",\n          content: systemPrompt\n        },\n        {\n          role: \"user\",\n          content: rawquestion\n        }\n      ],\n      temperature: 0.2\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -1152
+      ],
+      "id": "22c96d86-d357-492d-b13a-25b841868909",
+      "name": "aiMH"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "510eb69c-f34b-4f42-a390-a353f35ad95f",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4784,
+        -672
+      ],
+      "id": "83fcfd30-6a51-4e41-8c85-e8e1a1ed6a3f",
+      "name": "If9"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "adf01050-e0da-498d-9ec0-7a0857ffbf08",
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "LH",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5280,
+        -480
+      ],
+      "id": "cea42ccd-9ee1-4187-8f91-49b4e0f53b24",
+      "name": "If11"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst learnNextHK = Array.isArray(data.learn_next) && data.learn_next.length > 0\n  ? data.learn_next[0]\n  : null;\n\nconst learnedHK = Array.isArray(data.learned) && data.learned.length > 0\n  ? data.learned.join(\", \")\n  : null;\n\nconst learnNextSubjects = Array.isArray(data.learn_next_subjects)\n  ? data.learn_next_subjects.filter(r => r[\"Tên học phần\"])\n  : [];\n\nconst failedSubjects = Array.isArray(data.failedSubjects)\n  ? data.failedSubjects\n  : [];\n\nconst affectedSubjects = Array.isArray(data.affectedSubjects)\n  ? data.affectedSubjects\n  : [];\n\nconst failValue = data.fail?.value === true;\n\nconst rawQuestion = data.rawQuestion || null;\n\n// =========================\n// CASE 0: KHÔNG CÓ MÔN NÀO\n// =========================\nif (!learnNextHK || learnNextSubjects.length === 0) {\n  return [{\n    json: {\n      model: $env.AI_MODEL,\n      temperature: 0,\n      messages: [\n        {\n          role: \"system\",\n          content: `\nBạn là trợ lý tư vấn học tập.\nChỉ sử dụng dữ liệu được cung cấp.\nKhông suy luận.\n          `.trim()\n        },\n        {\n          role: \"assistant\",\n          content: \"Không tìm được môn học phù hợp để tư vấn cho sinh viên.\"\n        }\n      ]\n    }\n  }];\n}\n\n// =========================\n// BUILD: MÔN ĐÃ HỌC\n// =========================\nconst learnedText = learnedHK\n  ? `Sinh viên đã hoàn thành học kỳ: ${learnedHK}.`\n  : \"Không có thông tin học kỳ đã học.\";\n\n// =========================\n// BUILD: MÔN SẼ HỌC\n// =========================\nlet learnNextList = \"\";\n\nlearnNextSubjects.forEach(r => {\n  let line = `- ${r[\"Tên học phần\"]} (${r[\"Số tín chỉ\"]} tín chỉ)`;\n\n  if (r[\"Bắt buộc/Tự chọn\"] === \"BB\") {\n    line += \" – Bắt buộc\";\n  } else {\n    line += ` – Tự chọn – Nhóm: ${r.group || \"Không rõ nhóm\"}`;\n  }\n\n  learnNextList += line + \"\\n\";\n});\n\n// =========================\n// CASE 1: FAIL MODE\n// =========================\nif (failValue) {\n  let failedList = \"\";\n  let affectedList = \"\";\n\n  failedSubjects.forEach(r => {\n    failedList += `- ${r[\"Tên học phần\"]} (${r[\"Số tín chỉ\"]} tín chỉ)\\n`;\n  });\n\n  affectedSubjects.forEach(r => {\n    if (r[\"Bắt buộc/Tự chọn\"] === \"BB\") {\n      affectedList += `- ${r[\"Tên học phần\"]} (HK ${r[\"Phân bổ học kỳ\"]}) – môn bắt buộc, nên học lại sớm nhất có thể\\n`;\n    } else {\n      affectedList += `- ${r[\"Tên học phần\"]} (HK ${r[\"Phân bổ học kỳ\"]}) – môn tự chọn, cân nhắc học lại hoặc chọn môn khác\\n`;\n    }\n  });\n\n  return [{\n    json: {\n      model: $env.AI_MODEL,\n      temperature: 0.3,\n      messages: [\n        {\n          role: \"system\",\n          content: `\nBạn là hệ thống diễn giải dữ liệu học tập.\n\nVAI TRÒ:\n- Chuyển dữ liệu học vụ do hệ thống cung cấp thành đoạn văn dễ đọc, tự nhiên\n- Có thể đưa ra gợi ý học tập dựa vào thông tin đã cho chứ không được chế thêm thông tin\n\nQUY TẮC TUYỆT ĐỐI:\n- Mỗi thông tin trong câu trả lời PHẢI xuất phát trực tiếp từ dữ liệu.\n- Không thêm ví dụ, không thêm số liệu, không thêm giả định.\n- Không tạo kế hoạch mẫu, không phân bổ thời gian.\n- Không nhắc đến nội dung không tồn tại trong dữ liệu.\n\nCÁCH VIẾT:\n- Viết như đang đọc lại thông tin cho sinh viên nghe.\n- Có thể nối câu cho mượt, nhưng KHÔNG được thêm ý mới.\n\nCÁCH TRÌNH BÀY MÔN HỌC:\n- Mỗi môn phải bao gồm: tên môn + số tín chỉ + bắt buộc/tự chọn\n- Ví dụ: \"Anh Văn 6 (3 tín chỉ, bắt buộc)\"\n- Gộp các môn tự chọn theo nhóm khi trình bày\n- Dựa vào tên nhóm để xác định số môn được phép chọn trong nhóm đó\n- Nhắc sinh viên mỗi nhóm chỉ được chọn đúng số môn quy định, nếu đăng ký vượt quá số đó thì các môn dư sẽ không được tính vào chương trình\n\nNếu một thông tin không có trong dữ liệu → không được xuất hiện trong câu trả lời.\n\n[DỮ LIỆU GIỮ NGUYÊN PHẦN CÒN LẠI]\n\n${learnedText}\n\nI. Sinh viên hiện tại sẽ học đến ${learnNextHK}.\n\nII. Các môn sinh viên sẽ được học trong học kỳ ${learnNextHK}:\n${learnNextList}\n\nIII. Các môn đã rớt:\n${failedList || \"- Không có\"}\n\nIV. Các môn chưa đủ điều kiện đăng ký do ảnh hưởng từ môn đã rớt:\n${affectedList || \"- Không có\"}\n          `.trim()\n        },\n        {\n          role: \"user\",\n          content: rawQuestion\n        }\n      ]\n    }\n  }];\n}\n\n// =========================\n// CASE 2: NORMAL MODE\n// =========================\nreturn [{\n  json: {\n    model: $env.AI_MODEL,\n    temperature: 0.3,\n    messages: [\n      {\n        role: \"system\",\n        content: `\nBạn là hệ thống diễn giải dữ liệu học tập.\n\nVAI TRÒ:\n- Chuyển dữ liệu học vụ do hệ thống cung cấp thành đoạn văn dễ đọc, tự nhiên.\n- Không tư vấn, không đưa lời khuyên, không đề xuất hành động.\n\nQUY TẮC TUYỆT ĐỐI:\n- Mỗi thông tin trong câu trả lời PHẢI xuất phát trực tiếp từ dữ liệu.\n- Không thêm ví dụ, không thêm số liệu, không thêm giả định.\n- Không tạo kế hoạch mẫu, không phân bổ thời gian.\n- Không nhắc đến nội dung không tồn tại trong dữ liệu.\n\nCÁCH VIẾT:\n- Viết như đang đọc lại thông tin cho sinh viên nghe.\n- Có thể nối câu cho mượt, nhưng KHÔNG được thêm ý mới.\n\nCÁCH TRÌNH BÀY MÔN HỌC:\n- Mỗi môn phải bao gồm: tên môn + số tín chỉ + bắt buộc/tự chọn\n- Ví dụ: \"Anh Văn 6 (3 tín chỉ, bắt buộc)\"\n- Gộp các môn tự chọn theo nhóm khi trình bày\n- Dựa vào tên nhóm để xác định số môn được phép chọn trong nhóm đó\n- Nhắc sinh viên mỗi nhóm chỉ được chọn đúng số môn quy định, nếu đăng ký vượt quá số đó thì các môn dư sẽ không được tính vào chương trình\n\nNếu một thông tin không có trong dữ liệu → không được xuất hiện trong câu trả lời.\n\n[DỮ LIỆU GIỮ NGUYÊN PHẦN CÒN LẠI]\n\n${learnedText}\n\nI. Sinh viên hiện tại sẽ học đến ${learnNextHK}.\n\nII. Các môn trong học kỳ ${learnNextHK}:\n${learnNextList}\n        `.trim()\n      },\n      {\n        role: \"user\",\n        content: rawQuestion\n      }\n    ]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -1840
+      ],
+      "id": "67093d54-f4ef-4a9c-bb6d-0d063b20ecb5",
+      "name": "aiBBTC"
+    }
+  ],
+  "pinData": {
+    "Webhook1": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json, application/*+json",
+            "content-type": "application/json",
+            "user-agent": "Java/25.0.1",
+            "host": "localhost:5678",
+            "connection": "keep-alive",
+            "transfer-encoding": "chunked"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "major": "Công nghệ phần mềm",
+            "course": "K28",
+            "message": "điều kiện tốt nghiệp là gì"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/test",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "If10": {
+      "main": [
+        [
+          {
+            "node": "aiHelp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "aiLH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "empty3": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) MH4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Help": {
+      "main": [
+        [
+          {
+            "node": "If10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge8": {
+      "main": [
+        [
+          {
+            "node": "Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) MH4": {
+      "main": [
+        [
+          {
+            "node": "Merge8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ctdt1": {
+      "main": [
+        [
+          {
+            "node": "empty3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge8",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge6": {
+      "main": [
+        [
+          {
+            "node": "ctdt1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) CTDT3": {
+      "main": [
+        [
+          {
+            "node": "Merge6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none5": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) CTDT3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge5": {
+      "main": [
+        [
+          {
+            "node": "inputAILH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none4": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) MH1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) MH1": {
+      "main": [
+        [
+          {
+            "node": "Merge5",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If7": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "none3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge5",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "none4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge4": {
+      "main": [
+        [
+          {
+            "node": "inputAICTDT1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) CTDT2": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none3": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) CTDT2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge3": {
+      "main": [
+        [
+          {
+            "node": "inputAICTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) CTDT1": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none2": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) CTDT1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none1": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) MH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "inputAIMH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) MH": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputAILH": {
+      "main": [
+        [
+          {
+            "node": "If9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputAIMH": {
+      "main": [
+        [
+          {
+            "node": "If11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputAICTDT1": {
+      "main": [
+        [
+          {
+            "node": "aiCTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputAICTDT": {
+      "main": [
+        [
+          {
+            "node": "aiCTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiHelp": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiLH": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "aiCTDT": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "inputAITN": {
+      "main": [
+        [
+          {
+            "node": "aiTN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiTN": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request AI": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "infoTN": {
+      "main": [
+        [
+          {
+            "node": "output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If6": {
+      "main": [
+        [
+          {
+            "node": "infoTN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "none",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "inputAITN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) CTDT": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) CTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse2JSON5": {
+      "main": [
+        [
+          {
+            "node": "none1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "parse2JSON4": {
+      "main": [
+        [
+          {
+            "node": "If7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse2JSON3": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "none2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse2JSON2": {
+      "main": [
+        [
+          {
+            "node": "Merge6",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "none5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse2JSON": {
+      "main": [
+        [
+          {
+            "node": "If6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "getMH1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "getDataMH": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "getDataCTDT": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "getDataCTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "mergeItem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "getCTDT": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mergeItem": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s) CTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet1": {
+      "main": [
+        [
+          {
+            "node": "getCTDT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "getDataMH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s) MH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "getMH1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "advice": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "ctdt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "both",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mh": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "both": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ctdt": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "bb_tc": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "graduate": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword13": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword11": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword9": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If5": {
+      "main": [
+        [
+          {
+            "node": "advice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If4": {
+      "main": [
+        [
+          {
+            "node": "bb_tc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword6": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "mh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "unknown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "graduate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NormalizeAi": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword7": {
+      "main": [
+        [
+          {
+            "node": "NormalizeAi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiKeyword5": {
+      "main": [
+        [
+          {
+            "node": "parse2JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "configAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge7": {
+      "main": [
+        [
+          {
+            "node": "inputAIBBTC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) CTDT4": {
+      "main": [
+        [
+          {
+            "node": "Merge7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "none6": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) CTDT4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "parse2JSON1": {
+      "main": [
+        [
+          {
+            "node": "none6",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge7",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "inputAIBBTC": {
+      "main": [
+        [
+          {
+            "node": "aiBBTC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiInput": {
+      "main": [
+        [
+          {
+            "node": "aiKeyword7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "configAI": {
+      "main": [
+        [
+          {
+            "node": "aiInput",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "unknown": {
+      "main": [
+        [
+          {
+            "node": "output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiMH": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If11": {
+      "main": [
+        [
+          {
+            "node": "aiLH",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "aiMH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If9": {
+      "main": [
+        [
+          {
+            "node": "aiLH",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "aiMH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aiBBTC": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fcc60113-1caf-44ea-a71d-cdb9ff3b4be1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fe592d97760b30915ddde711d60e9a8ed69094554c2d8212edb422f325f8845c"
+  },
+  "id": "0vSbIuz7MKSSo2qX",
+  "tags": []
+}
