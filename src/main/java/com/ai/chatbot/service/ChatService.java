@@ -15,6 +15,8 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.*;
+import com.ai.chatbot.model.UserCTDT;
+import com.ai.chatbot.repository.UserCTDTRepository;
 
 @Service
 public class ChatService {
@@ -25,17 +27,20 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final RestTemplate restTemplate;
     private final UserRepository userRepository;
+    private final UserCTDTRepository userCTDTRepository;
 
     public ChatService(
             ChatSessionRepository chatSessionRepository,
             ChatMessageRepository chatMessageRepository,
             RestTemplate restTemplate,
-            UserRepository userRepository
+            UserRepository userRepository,
+            UserCTDTRepository userCTDTRepository
     ) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.restTemplate = restTemplate;
         this.userRepository = userRepository;
+        this.userCTDTRepository = userCTDTRepository;
     }
 
     @Transactional
@@ -56,6 +61,17 @@ public class ChatService {
         }
         ChatSession session = getOrCreateSession(sessionId, userId);
 
+        // Lấy danh sách mã môn học đã học
+        List<UserCTDT> passedSubjects =
+                userCTDTRepository.findByUserIdAndFilters(userId, null, null, 0);
+
+        List<String> subjects = new ArrayList<>();
+
+        for (UserCTDT s : passedSubjects) {
+            if (s.getMaHocPhan() != null) {
+                subjects.add(s.getMaHocPhan());
+            }
+        }
         // 1. Lưu message USER
         saveMessage(sessionId, userMessage, ChatMessage.MessageType.USER, userId);
 
@@ -63,11 +79,13 @@ public class ChatService {
         payload.put("message", userMessage);
         payload.put("major", major);
         payload.put("course", course);
+        payload.put("subject", subjects);
 
         Map<String, Object> aiData;
         try {
             aiData = restTemplate.postForObject(
-                    "https://n8n-zlq3.onrender.com/webhook/chat",
+//                    "https://n8n-zlq3.onrender.com/webhook/chat",
+                    "http://localhost:5678/webhook/test",
                     payload,
                     Map.class
             );
@@ -93,7 +111,9 @@ public class ChatService {
         } else {
             Object aiText = aiData.get("ai_content");
             Object lh = aiData.get("LH");
-            noContent = (aiText == null && lh == null);
+            Object mh = aiData.get("mh");
+
+            noContent = (aiText == null && lh == null && mh == null);
         }
 
         Map<String, Object> normalized = new HashMap<>();
@@ -101,10 +121,12 @@ public class ChatService {
         if (noContent) {
             normalized.put("ai_content", "AI đang gặp lỗi. Vui lòng thử lại.");
             normalized.put("LH", null);
+            normalized.put("mh", null);
             normalized.put("raw", aiData);
         } else {
             normalized.put("ai_content", aiData.get("ai_content"));
             normalized.put("LH", aiData.get("LH"));
+            normalized.put("mh", aiData.get("mh"));
             normalized.put("raw", aiData);
         }
 

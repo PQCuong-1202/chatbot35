@@ -188,17 +188,15 @@ function addMessageToChat(sender, message) {
 
 // ===== AI RESPONSE RENDERER (ĐÃ SỬA) =====
 function renderAIResponse(raw) {
+
     let data;
 
-    // 1. Parse JSON nếu là string
     if (typeof raw === "string") {
         try {
             data = JSON.parse(raw);
-
             if (typeof data === "string") {
                 data = JSON.parse(data);
             }
-
         } catch {
             return renderMarkdown(raw);
         }
@@ -210,19 +208,37 @@ function renderAIResponse(raw) {
         return "";
     }
 
-    // FIX: nếu dữ liệu nằm trong raw
     if (data.raw && typeof data.raw === "object") {
         data = data.raw;
     }
 
     let html = "";
 
-    // 2. Nội dung text
+    // ai_content
     if (typeof data.ai_content === "string" && data.ai_content.trim() !== "") {
-        html += `<p>${escapeHtml(data.ai_content).replace(/\n/g, "<br>")}</p>`;
+        html += renderMarkdown(data.ai_content);
     }
 
-    // 3. Lịch học
+    // ===== THÊM ĐOẠN NÀY =====
+    if (Array.isArray(data.mh) && data.mh.length > 0) {
+
+        html += `<b>Các môn học tìm được:</b><br>`;
+        html += `<ul style="padding-left:16px;margin:6px 0">`;
+
+        data.mh.forEach(m => {
+            if (m.name) {
+                html += `<li>
+                    ${escapeHtml(m.name)}
+                    (${m.code || ""} - ${m.hk || ""})
+                </li>`;
+            }
+        });
+
+        html += `</ul>`;
+    }
+    // =========================
+
+    // LH
     if (Array.isArray(data.LH) && data.LH.length > 0) {
         html += renderLHCollapse(data.LH);
     }
@@ -317,10 +333,14 @@ function renderLHCollapse(dataLH) {
 function renderMarkdown(text) {
     if (!text) return '';
     let html = escapeHtml(text);
+
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="padding-left:16px;margin:4px 0">$1</ul>');
     html = html.replace(/\n/g, '<br>');
-    return `<p>${html}</p>`;
+
+    return `<div>${html}</div>`;
 }
 
 function escapeHtml(text) {

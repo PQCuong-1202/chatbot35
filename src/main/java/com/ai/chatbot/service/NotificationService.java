@@ -26,7 +26,7 @@ public class NotificationService {
     /** Thời gian chờ giữa 2 lần gợi ý (đơn vị: phút) */
     // TEST_MODE = true → dùng số bên trái dấu "?" là 2L là 2 phút
     // TEST_MODE = false → dùng số bên phải dấu ":" là ngày 90L bằng 90 ngày
-    private static final long RECOMMENDATION_INTERVAL_MINUTES = TEST_MODE ? 2L : (90L * 24 * 60);
+    private static final long RECOMMENDATION_INTERVAL_MINUTES = TEST_MODE ? 1L : (90L * 24 * 60);
     /** Anti-spam: không gửi lại nếu đã có thông báo gợi ý trong khoảng thời gian này (phút) */
     private static final long RECOMMENDATION_SPAM_GUARD_MINUTES = TEST_MODE ? 1L : (72L * 60);
 
@@ -91,11 +91,95 @@ public class NotificationService {
         if (semSubjects == null || semSubjects.isEmpty()) return;
         if (!isSemesterCompleted(semSubjects)) return;
 
+        // Lấy tất cả học phần
         List<UserCTDT> all = bySemester.values().stream()
                 .flatMap(Collection::stream).collect(Collectors.toList());
-        int total     = all.size();
-        int completed = (int) all.stream().filter(s -> Integer.valueOf(0).equals(s.getTrangThai())).count();
-        double progress = total > 0 ? (completed * 100.0) / total : 0;
+
+        // TÍNH % TIẾN ĐỘ THEO ĐÚNG CÔNG THỨC CỦA PROGRESS BARS
+        // Tính BB
+        double bbRequired = 0;
+        double bbCompleted = 0;
+
+        // Tính TC theo công thức X/Y
+        double tcRequired = 0;
+        double tcCompletedSimple = 0;
+
+        for (UserCTDT s : all) {
+            Integer tinChi = s.getTinChi() != null ? s.getTinChi() : 0;
+            Integer trangThai = s.getTrangThai() != null ? s.getTrangThai() : 1;
+
+            if ("BB".equals(s.getLoai())) {
+                bbRequired += tinChi;
+                if (trangThai == 0) {
+                    bbCompleted += tinChi;
+                }
+            } else if ("TC".equals(s.getLoai())) {
+                // Tính TC đã học đơn giản
+                if (trangThai == 0) {
+                    tcCompletedSimple += tinChi;
+                }
+            }
+        }
+
+        // Tính TC required theo nhóm
+        Map<String, List<UserCTDT>> tcGroups = new HashMap<>();
+        List<UserCTDT> tcNoGroup = new ArrayList<>();
+
+        for (UserCTDT s : all) {
+            if ("TC".equals(s.getLoai())) {
+                String nhomTC = s.getNhomTC();
+                if (nhomTC != null && !nhomTC.trim().isEmpty()) {
+                    tcGroups.computeIfAbsent(nhomTC.trim(), k -> new ArrayList<>()).add(s);
+                } else {
+                    tcNoGroup.add(s);
+                }
+            }
+        }
+
+        // TC không nhóm
+        for (UserCTDT s : tcNoGroup) {
+            tcRequired += s.getTinChi() != null ? s.getTinChi() : 0;
+        }
+
+        // TC có nhóm theo X/Y
+        for (Map.Entry<String, List<UserCTDT>> entry : tcGroups.entrySet()) {
+            String nhomTC = entry.getKey();
+            List<UserCTDT> group = entry.getValue();
+
+            double groupTotal = group.stream()
+                    .mapToInt(gs -> gs.getTinChi() != null ? gs.getTinChi() : 0)
+                    .sum();
+
+            String[] parts = nhomTC.split("/");
+            if (parts.length == 2) {
+                try {
+                    int x = Integer.parseInt(parts[0].trim());
+                    int y = Integer.parseInt(parts[1].trim());
+                    if (y > 0) {
+                        tcRequired += groupTotal * ((double) x / y);
+                    } else {
+                        tcRequired += groupTotal;
+                    }
+                } catch (NumberFormatException e) {
+                    tcRequired += groupTotal;
+                }
+            } else {
+                tcRequired += groupTotal;
+            }
+        }
+
+        // Tổng hợp
+        double totalRequired = bbRequired + tcRequired;
+        double totalCompleted = bbCompleted + tcCompletedSimple;
+
+        double progress = totalRequired > 0 ? (totalCompleted * 100.0) / totalRequired : 0;
+
+        // Log để debug
+        System.out.println("===== TÍNH TIẾN ĐỘ CHO THÔNG BÁO =====");
+        System.out.println("BB: " + bbCompleted + "/" + bbRequired);
+        System.out.println("TC: " + tcCompletedSimple + "/" + tcRequired);
+        System.out.println("TỔNG: " + totalCompleted + "/" + totalRequired);
+        System.out.println("TIẾN ĐỘ: " + String.format("%.1f", progress) + "%");
 
         String titleKey = "HOÀN THÀNH HK" + changedSemester;
         if (!hasRecentNotification(user.getId(), titleKey, 24 * 60)) {

@@ -402,6 +402,7 @@ setTimeout(autoSendCourseRecommendation, 1500);
 // Polling mỗi 60 giây — backend tự quyết định đủ hạn chưa
 // TEST_MODE=true : 1 phút → gợi ý HK tiếp
 // TEST_MODE=false: 90 ngày → gợi ý HK tiếp
-setInterval(autoSendCourseRecommendation, 60 * 1000);
+// Frontend gọi API kiểm tra mỗi 60 giây để bắt kịp ngay khi backend tạo xong
+setInterval(autoSendCourseRecommendation, 10 * 1000);
 
 window.autoSendCourseRecommendation = autoSendCourseRecommendation;
