@@ -773,7 +773,7 @@ public class NotificationService {
         // ── [C] Lời khuyên ────────────────────────────────────────────────
         msg.append("\n");
         if (!carryOverSubjects.isEmpty()) {
-            msg.append("💡 Hãy ưu tiên hoàn thành các môn còn thiếu từ học kỳ trước\n");
+            msg.append("💡 Hãy dành thời gian hoàn thành các môn còn thiếu từ học kỳ trước\n");
             msg.append("   để bảo đảm tiến độ tốt nghiệp đúng hạn!");
         } else {
             msg.append("💡 Đăng ký môn học sớm để đảm bảo có suất trong lớp học phần.\n");
@@ -781,7 +781,7 @@ public class NotificationService {
         }
 
         // Thêm nhãn TEST_MODE vào tiêu đề để dễ phân biệt khi test
-        String testLabel = TEST_MODE ? " [TEST]" : "";
+        String testLabel = TEST_MODE ? " " : "";
         String title = "💡 GỢI Ý HỌC KỲ " + targetHK
                 + (carryOverSubjects.isEmpty() ? "" : " (Kèm môn còn thiếu)")
                 + testLabel;
